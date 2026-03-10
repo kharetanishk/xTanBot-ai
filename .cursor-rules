@@ -1,0 +1,1514 @@
+  # ============================================================
+# ENGINEERING CONSTITUTION
+# xTanBot.ai — AI Voice Assistant Platform
+# Stack: React Native · Fastify · Claude API · Twilio Streaming
+#        ElevenLabs · BullMQ · Redis · Postgres · Prisma · Turborepo
+# ============================================================
+# This file is the single source of architectural truth.
+# Every generated file, module, and pattern must conform to
+# these rules without exception. When in doubt, centralize.
+#
+# Version:    2.0.0
+# Status:     RATIFIED
+# Governed by: Staff Architecture Team
+# ============================================================
+
+
+# ────────────────────────────────────────────────────────────
+# 0. PRIME DIRECTIVES
+# ────────────────────────────────────────────────────────────
+
+These directives are inviolable. No exception, no workaround, no shortcut.
+A pull request that violates any directive below must not be merged.
+
+- Never duplicate logic that already exists in a shared package.
+- Never bypass the AI tool router — all Claude invocations go through it.
+- Never call external services (Twilio, ElevenLabs, Redis, Prisma) directly
+  from route handlers; always go through the service layer.
+- Never hardcode secrets, config, or environment values; use @xtanbot/config.
+- Never write a service that holds mutable in-memory state.
+- Never create a Prisma client outside of @xtanbot/db.
+- Never skip Zod validation on any external input boundary.
+- Never write unstructured logs; always use @xtanbot/logger.
+- Never mix concerns: route → service → repository → infrastructure.
+- Never call the Claude API outside of @xtanbot/ai-core.
+- Never emit a domain event without a schema defined in @xtanbot/events.
+- Never define a prompt string inline in application code; use @xtanbot/ai-core/prompts.
+- Never bypass observability on a critical path; every external call is traced.
+
+
+# ────────────────────────────────────────────────────────────
+# 1. MONOREPO STRUCTURE (Turborepo)
+# ────────────────────────────────────────────────────────────
+
+## 1.1 Canonical Directory Layout
+
+```
+/
+├── apps/
+│   ├── api/               # Fastify HTTP + WebSocket server
+│   ├── worker/            # BullMQ job consumers (Node process)
+│   └── mobile/            # React Native (Expo) Android client
+├── packages/
+│   ├── ai-core/           # Claude agent kernel: runAgent, toolRouter, promptBuilder
+│   ├── voice-pipeline/    # Twilio stream handler + ElevenLabs TTS + STT
+│   ├── db/                # Prisma client, migrations, repositories, seed
+│   ├── queues/            # BullMQ queue/job definitions & producers
+│   ├── events/            # Domain event schemas, emitter, and bus
+│   ├── redis/             # Redis client factory, session helpers, rate limiting
+│   ├── config/            # Env schema (Zod), typed config singleton
+│   ├── logger/            # Pino-based structured logger factory
+│   ├── observability/     # OpenTelemetry, metrics, tracing, health checks
+│   ├── zod-schemas/       # All shared Zod schemas & inferred types
+│   └── tsconfig/          # Shared TypeScript configurations
+└── turbo.json
+```
+
+## 1.2 Package Naming Convention
+
+All packages use the `@xtanbot/` namespace. This is non-negotiable.
+
+```
+@xtanbot/ai-core
+@xtanbot/voice-pipeline
+@xtanbot/db
+@xtanbot/queues
+@xtanbot/events
+@xtanbot/redis
+@xtanbot/config
+@xtanbot/logger
+@xtanbot/observability
+@xtanbot/zod-schemas
+@xtanbot/tsconfig
+```
+
+The generic `@repo/` namespace is retired. All imports must use `@xtanbot/`.
+
+## 1.3 Rules
+
+- `apps/` contains only runnable processes. No business logic lives here.
+- `packages/` contains all reusable logic. A package must never import from `apps/`.
+- An app may import from packages. Packages may import from other packages,
+  but circular dependencies are unconditionally forbidden.
+- Every package and app must have its own `package.json` with a `name`
+  prefixed `@xtanbot/`.
+- Turborepo pipeline tasks: `build`, `lint`, `typecheck`, `test`.
+  Each package must declare all tasks it participates in.
+- New packages must be proposed via an Architecture Decision Record (ADR)
+  before being created. No ad-hoc packages.
+
+
+# ────────────────────────────────────────────────────────────
+# 2. CONFIGURATION & ENVIRONMENT (@xtanbot/config)
+# ────────────────────────────────────────────────────────────
+
+## 2.1 Pattern
+
+```typescript
+// packages/config/src/index.ts
+import { z } from "zod";
+
+const EnvSchema = z.object({
+  NODE_ENV:              z.enum(["development", "test", "production"]),
+  API_PORT:              z.coerce.number().default(3000),
+  API_HOST:              z.string().default("0.0.0.0"),
+
+  // Database
+  DATABASE_URL:          z.string().url(),
+
+  // Redis
+  REDIS_URL:             z.string().url(),
+
+  // Anthropic (Claude)
+  ANTHROPIC_API_KEY:     z.string().min(1),
+  ANTHROPIC_MODEL:       z.string().default("claude-opus-4-5"),
+
+  // ElevenLabs
+  ELEVENLABS_API_KEY:    z.string().min(1),
+  ELEVENLABS_VOICE_ID:   z.string().min(1),
+  ELEVENLABS_MODEL_ID:   z.string().default("eleven_turbo_v2_5"),
+
+  // Twilio
+  TWILIO_ACCOUNT_SID:    z.string().min(1),
+  TWILIO_AUTH_TOKEN:     z.string().min(1),
+  TWILIO_PHONE_NUMBER:   z.string().min(1),
+
+  // Deepgram (STT)
+  DEEPGRAM_API_KEY:      z.string().min(1),
+
+  // Auth
+  JWT_SECRET:            z.string().min(32),
+  JWT_EXPIRES_IN:        z.string().default("7d"),
+
+  // Worker
+  WORKER_CONCURRENCY:    z.coerce.number().default(10),
+
+  // Rate Limiting
+  RATE_LIMIT_CALLS_PER_HOUR:     z.coerce.number().default(20),
+  RATE_LIMIT_AI_RPM:             z.coerce.number().default(60),
+  VOICE_SESSION_MAX_DURATION_S:  z.coerce.number().default(1800),
+});
+
+export type Env = z.infer<typeof EnvSchema>;
+export const config: Env = EnvSchema.parse(process.env);
+```
+
+## 2.2 Rules
+
+- `config` is parsed and validated at process startup. A missing or invalid
+  var must throw immediately and crash the process. Silent defaults for
+  security-critical values are forbidden.
+- Import `config` from `@xtanbot/config` everywhere. Never read `process.env`
+  directly outside this package.
+- The Zod EnvSchema is the single source of truth for all required variables.
+- `.env.example` must be kept in sync with EnvSchema at all times.
+  CI must fail if a variable exists in EnvSchema but not in `.env.example`.
+
+
+# ────────────────────────────────────────────────────────────
+# 3. DATABASE LAYER (@xtanbot/db)
+# ────────────────────────────────────────────────────────────
+
+## 3.1 Pattern
+
+```typescript
+// packages/db/src/client.ts
+import { PrismaClient } from "@prisma/client";
+import { config } from "@xtanbot/config";
+
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    datasources: { db: { url: config.DATABASE_URL } },
+    log: config.NODE_ENV === "development" ? ["query", "error"] : ["error"],
+  });
+
+if (config.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+```
+
+## 3.2 Rules
+
+- There is exactly ONE PrismaClient instance across the entire runtime.
+  It lives in `@xtanbot/db`. Nothing else instantiates PrismaClient.
+- All Prisma schema changes go through migrations (`prisma migrate dev`).
+  Never use `db push` in production. Migrations are version-controlled.
+- Repository functions are the only code that calls `prisma.*`. They live in
+  `packages/db/src/repositories/`. Each domain gets its own repository file.
+- Repository functions must be pure async functions — no side effects beyond
+  the database operation.
+- Exported types from `@xtanbot/db` are always inferred from Prisma's generated
+  types; never manually duplicate model interfaces.
+- Soft deletes are preferred over hard deletes for all user-owned entities.
+  Add `deletedAt DateTime?` to relevant models.
+
+## 3.3 Repository Naming Convention
+
+```
+packages/db/src/repositories/
+├── conversation.repository.ts
+├── user.repository.ts
+├── call.repository.ts
+├── meeting.repository.ts
+├── contact.repository.ts
+├── session.repository.ts
+└── index.ts   ← re-exports all repositories
+```
+
+Each repository file exports a single frozen object:
+
+```typescript
+export const callRepository = {
+  async create(data: CreateCall): Promise<Call> { ... },
+  async findById(id: string): Promise<Call | null> { ... },
+  async update(id: string, data: UpdateCall): Promise<Call> { ... },
+  async softDelete(id: string): Promise<void> { ... },
+} as const;
+```
+
+
+# ────────────────────────────────────────────────────────────
+# 4. LOGGING (@xtanbot/logger)
+# ────────────────────────────────────────────────────────────
+
+## 4.1 Pattern
+
+```typescript
+// packages/logger/src/index.ts
+import pino from "pino";
+import { config } from "@xtanbot/config";
+
+export function createLogger(context: string) {
+  return pino({
+    level: config.NODE_ENV === "production" ? "info" : "debug",
+    base: { context, service: "xtanbot" },
+    timestamp: pino.stdTimeFunctions.isoTime,
+    redact: {
+      paths: ["*.password", "*.token", "*.apiKey", "*.authorization"],
+      censor: "[REDACTED]",
+    },
+  });
+}
+
+export type Logger = ReturnType<typeof createLogger>;
+```
+
+## 4.2 Rules
+
+- Every module that emits logs must call `createLogger("ModuleName")` once
+  at module scope and reuse the instance.
+- Log entries must always include: `context`, `level`, `timestamp`, and a
+  `msg`. Attach structured metadata as additional fields — never interpolate
+  variable data into the message string.
+- Sensitive fields (password, token, apiKey, authorization headers) must
+  always be redacted. The logger's redact configuration is the safety net,
+  but developers must also never deliberately log these fields.
+- Use log levels correctly:
+  - `trace` — internal flow tracing (dev only, never in production)
+  - `debug` — diagnostic data, intermediate values
+  - `info`  — normal operational events (call started, job completed)
+  - `warn`  — recoverable anomalies (retry attempt, rate limit approached)
+  - `error` — failures requiring attention (always include `err` field)
+  - `fatal` — process-killing errors (always followed by process exit)
+- Never use `console.log` / `console.error` in application code.
+- In production, logs are emitted as newline-delimited JSON (NDJSON) and
+  shipped to a centralized logging backend.
+
+
+# ────────────────────────────────────────────────────────────
+# 5. ZOD VALIDATION (@xtanbot/zod-schemas)
+# ────────────────────────────────────────────────────────────
+
+## 5.1 Rules
+
+- All schemas shared between packages or apps live in `@xtanbot/zod-schemas`.
+- App-local schemas (e.g., a single route's request body) may live co-located,
+  but must extend or compose from `@xtanbot/zod-schemas` types where overlap exists.
+- Every external input boundary must parse with Zod before any other logic:
+  - HTTP request bodies, query params, path params
+  - WebSocket messages
+  - BullMQ job payloads (defined with `z.object` in queue definitions)
+  - Claude tool call arguments
+  - Domain event payloads
+  - ElevenLabs/Twilio webhook payloads
+  - Redis session data (on read)
+- Use `schema.parse()` when a failure should throw (trusted server-side path).
+  Use `schema.safeParse()` when returning a structured user-facing error.
+- Always export both the schema and its inferred type:
+
+```typescript
+export const CreateCallSchema = z.object({
+  userId:      z.string().uuid(),
+  toNumber:    z.string().regex(/^\+[1-9]\d{1,14}$/, "E.164 format required"),
+  agentPrompt: z.string().max(500).optional(),
+});
+export type CreateCall = z.infer<typeof CreateCallSchema>;
+```
+
+- Schemas must be organized by domain:
+
+```
+packages/zod-schemas/src/
+├── call.schemas.ts
+├── meeting.schemas.ts
+├── conversation.schemas.ts
+├── contact.schemas.ts
+├── session.schemas.ts
+├── user.schemas.ts
+└── index.ts
+```
+
+
+# ────────────────────────────────────────────────────────────
+# 6. DOMAIN ARCHITECTURE
+# ────────────────────────────────────────────────────────────
+
+## 6.1 Philosophy
+
+The system is organized around business domains, not technical layers alone.
+Every feature maps to a domain. Every domain owns its schemas, repositories,
+services, events, and queue jobs. Infrastructure packages serve all domains
+but own none.
+
+## 6.2 Defined Domains
+
+```
+conversation   — dialogue history, message threading, context windows
+calls          — Twilio phone call lifecycle, call records, status tracking
+meetings       — scheduling, calendar integration, invites, reminders
+contacts       — external persons the agent interacts with or on behalf of
+sessions       — voice call session state, Redis-backed, TTL-enforced
+users          — account identity, authentication, preferences
+```
+
+## 6.3 Domain Mapping Rules
+
+Each domain follows this mapping:
+
+| Layer              | Location                                                  |
+|--------------------|-----------------------------------------------------------|
+| Schema             | `@xtanbot/zod-schemas/src/{domain}.schemas.ts`            |
+| Prisma Model       | `@xtanbot/db/prisma/schema.prisma`                        |
+| Repository         | `@xtanbot/db/src/repositories/{domain}.repository.ts`     |
+| Service            | `apps/api/src/services/{domain}.service.ts`               |
+| Route Handler      | `apps/api/src/routes/v1/{domain}/`                        |
+| Domain Events      | `@xtanbot/events/src/events/{domain}.events.ts`           |
+| Queue Jobs         | `@xtanbot/queues/src/jobs/{domain}.job.ts`                |
+| Worker Handler     | `apps/worker/src/handlers/{domain}.handler.ts`            |
+
+## 6.4 Domain Isolation Rules
+
+- A service for domain A must not directly import a repository for domain B.
+  Cross-domain data needs are resolved through domain events or dedicated
+  read-model queries in the requesting domain's own repository.
+- Domain events are the runtime contract between domains.
+  Shared Zod schemas are the compile-time contract between domains.
+- Each domain's service is the single authority over mutations to that domain's
+  data. No other service may write to another domain's tables.
+
+## 6.5 Example: Calls Domain Structure
+
+```
+@xtanbot/zod-schemas      → CreateCallSchema, CallStatusSchema
+@xtanbot/db               → callRepository (create, findById, updateStatus)
+apps/api/services         → callService (initiateCall, endCall, getCallHistory)
+apps/api/routes/v1/calls  → POST /calls, GET /calls/:id, DELETE /calls/:id
+@xtanbot/events           → call.started, call.completed, call.failed
+@xtanbot/queues           → AgentJobSchema, enqueueAgentJob
+apps/worker/handlers      → agentHandler (processes agent queue jobs for calls)
+```
+
+
+# ────────────────────────────────────────────────────────────
+# 7. EVENT ARCHITECTURE (@xtanbot/events)
+# ────────────────────────────────────────────────────────────
+
+## 7.1 Philosophy
+
+The system is event-driven at the domain boundary. When a significant state
+change occurs in one domain, a typed domain event is emitted. Other domains
+react by consuming events — they never poll or call across domain service
+boundaries synchronously.
+
+## 7.2 Package Structure
+
+```
+packages/events/src/
+├── events/
+│   ├── call.events.ts         # call.started, call.completed, call.failed
+│   ├── meeting.events.ts      # meeting.scheduled, meeting.cancelled
+│   ├── conversation.events.ts # agent.responded, context.updated
+│   ├── session.events.ts      # session.created, session.expired
+│   └── index.ts
+├── bus.ts                     # Event bus (Redis pub/sub backed)
+├── emitter.ts                 # Type-safe emit helper
+└── types.ts                   # DomainEvent base type
+```
+
+## 7.3 Domain Event Schema Pattern
+
+```typescript
+// packages/events/src/events/call.events.ts
+import { z } from "zod";
+
+export const CallStartedEventSchema = z.object({
+  type:      z.literal("call.started"),
+  callId:    z.string().uuid(),
+  userId:    z.string().uuid(),
+  callSid:   z.string(),
+  toNumber:  z.string(),
+  timestamp: z.string().datetime(),
+});
+export type CallStartedEvent = z.infer<typeof CallStartedEventSchema>;
+
+export const CallCompletedEventSchema = z.object({
+  type:       z.literal("call.completed"),
+  callId:     z.string().uuid(),
+  userId:     z.string().uuid(),
+  durationMs: z.number().int().nonnegative(),
+  timestamp:  z.string().datetime(),
+});
+export type CallCompletedEvent = z.infer<typeof CallCompletedEventSchema>;
+
+export const CallEventSchema = z.discriminatedUnion("type", [
+  CallStartedEventSchema,
+  CallCompletedEventSchema,
+]);
+export type CallEvent = z.infer<typeof CallEventSchema>;
+```
+
+## 7.4 Canonical Domain Events
+
+```
+call.started              — Twilio call connected, session created
+call.completed            — Call ended normally
+call.failed               — Call dropped or errored
+meeting.scheduled         — Meeting created and confirmed
+meeting.cancelled         — Meeting removed
+meeting.reminder.sent     — Reminder notification dispatched
+agent.responded           — Claude completed a turn, response ready
+agent.tool_called         — A tool was invoked during agent reasoning
+session.created           — Voice session initialized in Redis
+session.expired           — TTL elapsed, session purged
+contact.created           — New contact added to the system
+conversation.updated      — Conversation history appended
+```
+
+## 7.5 Event Bus Pattern
+
+```typescript
+// packages/events/src/bus.ts
+import { redisConnection } from "@xtanbot/redis";
+import { createLogger } from "@xtanbot/logger";
+import type { DomainEvent } from "./types";
+
+const logger = createLogger("EventBus");
+
+export async function publishEvent(event: DomainEvent): Promise<void> {
+  const channel = `xtanbot:events:${event.type}`;
+  await redisConnection.publish(channel, JSON.stringify(event));
+  logger.info({ eventType: event.type }, "Domain event published");
+}
+
+export function subscribeToEvent(
+  eventType: string,
+  handler: (event: DomainEvent) => Promise<void>
+): void {
+  const subscriber = redisConnection.duplicate();
+  subscriber.subscribe(`xtanbot:events:${eventType}`);
+  subscriber.on("message", async (_, message) => {
+    try {
+      await handler(JSON.parse(message) as DomainEvent);
+    } catch (err) {
+      logger.error({ err, eventType }, "Event handler failed");
+    }
+  });
+}
+```
+
+## 7.6 Rules
+
+- Every domain event must have a Zod schema. Unschematized events are forbidden.
+- Events are immutable facts. Once emitted, they cannot be retracted.
+  Compensate with a new event (e.g., `call.cancelled` after `call.started`).
+- Services emit events after a successful state change — never before.
+- Event handlers must be idempotent. The bus may deliver an event more than once.
+- Events carry only identifiers and essential scalars — not full entity graphs.
+  Consumers fetch entity data from repositories when needed.
+- Event type names follow `{domain}.{action}` dot notation.
+- All event channel names follow: `xtanbot:events:{event.type}`.
+
+
+# ────────────────────────────────────────────────────────────
+# 8. AI AGENT KERNEL (@xtanbot/ai-core)
+# ────────────────────────────────────────────────────────────
+
+## 8.1 Architecture Overview
+
+The AI system is governed by a central kernel. Every reasoning operation —
+without exception — flows through this kernel. No application code, service,
+or worker calls the Claude API directly.
+
+```
+@xtanbot/ai-core
+├── src/
+│   ├── agent.ts            # Kernel entry point: runAgent()
+│   ├── tool-router.ts      # Central tool registry + dispatcher
+│   ├── prompt-builder.ts   # Composes system prompts from versioned templates
+│   ├── context-builder.ts  # Assembles AgentContext from session + history
+│   ├── client.ts           # Single Anthropic SDK instance (private, not exported)
+│   ├── tools/
+│   │   ├── schedule-meeting.tool.ts
+│   │   ├── initiate-call.tool.ts
+│   │   ├── lookup-contact.tool.ts
+│   │   ├── get-weather.tool.ts
+│   │   ├── search-calendar.tool.ts
+│   │   └── index.ts
+│   ├── prompts/            # See Section 9: Prompt Governance
+│   ├── errors.ts           # AgentError, ToolError, ContextError
+│   └── types.ts            # AgentContext, AgentResponse, ToolDefinition, LLMProvider
+```
+
+## 8.2 The Agent Kernel — Four Components
+
+```
+┌─────────────────────────────────────────────┐
+│              AGENT KERNEL                   │
+│                                             │
+│  ┌─────────────┐    ┌──────────────────┐   │
+│  │  runAgent() │───▶│  promptBuilder   │   │
+│  │             │    └──────────────────┘   │
+│  │  agentic    │    ┌──────────────────┐   │
+│  │  loop       │───▶│  agentContext    │   │
+│  │             │    └──────────────────┘   │
+│  │             │    ┌──────────────────┐   │
+│  │             │───▶│  toolRouter      │   │
+│  └─────────────┘    └──────────────────┘   │
+└─────────────────────────────────────────────┘
+```
+
+- `runAgent(ctx)` — Orchestrates the agentic loop. Stateless. All context
+  arrives via `AgentContext`. Returns `AgentResponse`.
+- `toolRouter` — Singleton registry. Dispatches all tool calls. Validates
+  inputs with each tool's own Zod schema.
+- `promptBuilder` — Composes the system prompt from versioned templates.
+  Never concatenates raw strings.
+- `agentContext` — Serializable, immutable context. Carries: messages,
+  session metadata, user preferences, call state.
+
+## 8.3 Tool Router
+
+```typescript
+// packages/ai-core/src/tool-router.ts
+import { allTools } from "./tools";
+import { ToolError } from "./errors";
+import { createLogger } from "@xtanbot/logger";
+import type { ToolDefinition } from "./types";
+
+const logger = createLogger("ToolRouter");
+
+class ToolRouter {
+  private readonly registry = new Map<string, ToolDefinition>();
+
+  constructor(tools: ToolDefinition[]) {
+    for (const tool of tools) this.registry.set(tool.name, tool);
+    logger.info({ toolCount: this.registry.size }, "Tool router initialized");
+  }
+
+  async dispatch(name: string, args: unknown): Promise<unknown> {
+    const tool = this.registry.get(name);
+    if (!tool) throw new ToolError(`Unknown tool: ${name}`);
+    const validated = tool.inputSchema.parse(args);
+    logger.debug({ toolName: name }, "Tool dispatched");
+    return tool.execute(validated);
+  }
+
+  getDefinitions() {
+    return [...this.registry.values()].map((t) => t.toClaudeToolDefinition());
+  }
+}
+
+export const toolRouter = new ToolRouter(allTools);
+```
+
+## 8.4 Tool Definition Contract
+
+```typescript
+// packages/ai-core/src/types.ts
+import { z } from "zod";
+import type { Tool } from "@anthropic-ai/sdk/resources";
+
+export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
+  name:        string;
+  description: string;
+  inputSchema: z.ZodSchema<TInput>;
+  execute:     (input: TInput) => Promise<TOutput>;
+  toClaudeToolDefinition(): Tool;
+}
+
+export type AgentContext = {
+  readonly sessionId:     string;
+  readonly userId:        string;
+  readonly callSid?:      string;
+  readonly messages:      ReadonlyArray<AgentMessage>;
+  readonly userProfile?:  UserProfile;
+  readonly callMetadata?: CallMetadata;
+};
+
+export type AgentResponse = {
+  readonly text:       string;
+  readonly toolsUsed:  ReadonlyArray<string>;
+  readonly stopReason: "end_turn" | "max_tokens";
+  readonly usage:      { inputTokens: number; outputTokens: number };
+};
+```
+
+## 8.5 Agentic Loop
+
+```typescript
+// packages/ai-core/src/agent.ts
+import { anthropicClient } from "./client";
+import { toolRouter }      from "./tool-router";
+import { buildSystemPrompt } from "./prompt-builder";
+import { AgentError }      from "./errors";
+import { createLogger }    from "@xtanbot/logger";
+import { config }          from "@xtanbot/config";
+import type { AgentContext, AgentResponse } from "./types";
+
+const logger = createLogger("AgentKernel");
+
+export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
+  logger.info({ sessionId: ctx.sessionId, userId: ctx.userId }, "Agent loop started");
+
+  const messages = [...ctx.messages];
+  const toolsUsed: string[] = [];
+
+  while (true) {
+    const response = await anthropicClient.messages.create({
+      model:      config.ANTHROPIC_MODEL,
+      system:     buildSystemPrompt(ctx),
+      tools:      toolRouter.getDefinitions(),
+      messages,
+      max_tokens: 1024,
+    });
+
+    if (response.stop_reason === "end_turn") {
+      logger.info({ sessionId: ctx.sessionId, toolsUsed }, "Agent loop completed");
+      return extractFinalResponse(response, toolsUsed);
+    }
+
+    if (response.stop_reason === "tool_use") {
+      const toolResults = await Promise.all(
+        response.content
+          .filter((b) => b.type === "tool_use")
+          .map(async (b) => {
+            if (b.type !== "tool_use") return null;
+            toolsUsed.push(b.name);
+            const result = await toolRouter.dispatch(b.name, b.input);
+            return { type: "tool_result" as const, tool_use_id: b.id, content: JSON.stringify(result) };
+          })
+      );
+      messages.push({ role: "assistant", content: response.content });
+      messages.push({ role: "user", content: toolResults.filter(Boolean) });
+      continue;
+    }
+
+    throw new AgentError(`Unexpected stop_reason: ${response.stop_reason}`);
+  }
+}
+```
+
+## 8.6 Rules
+
+- `toolRouter` is the ONLY place Claude tool calls are dispatched.
+- `runAgent` is the ONLY entry point for Claude API calls.
+- Tools are stateless pure functions. No tool holds instance-level state.
+- `AgentContext` must be fully serializable (no class instances, Buffers, functions).
+- Adding a new AI capability requires only: (1) new tool file, (2) add to `tools/index.ts`.
+- The `anthropicClient` in `client.ts` is private to `@xtanbot/ai-core`.
+  It is never exported. External code accesses AI only via `runAgent()`.
+
+
+# ────────────────────────────────────────────────────────────
+# 9. PROMPT GOVERNANCE (@xtanbot/ai-core/prompts)
+# ────────────────────────────────────────────────────────────
+
+## 9.1 Philosophy
+
+Prompts are code. They determine AI behavior and quality. They must be
+version-controlled, reviewed, tested, and governed with the same rigor as
+application logic. Inline prompt strings scattered across the codebase are
+a first-class architectural defect.
+
+## 9.2 Prompt Directory Structure
+
+```
+packages/ai-core/src/prompts/
+├── system/
+│   ├── voice-agent.v1.ts       # Primary voice assistant system prompt
+│   ├── scheduling-agent.v1.ts  # Specialized scheduling context
+│   └── index.ts                # Registry: name → versioned prompt function
+├── tools/
+│   ├── descriptions.ts         # Tool description strings (used in tool defs)
+│   └── index.ts
+├── memory/
+│   ├── conversation-formatter.ts  # Formats history for context window
+│   └── summary-formatter.ts       # Formats compressed memory summaries
+└── context/
+    ├── user-profile-formatter.ts  # Renders user profile into prompt text
+    └── call-state-formatter.ts    # Renders live call state into prompt text
+```
+
+## 9.3 Prompt Module Pattern
+
+```typescript
+// packages/ai-core/src/prompts/system/voice-agent.v1.ts
+import type { AgentContext } from "../../types";
+
+export const PROMPT_VERSION = "voice-agent@v1";
+
+export function renderVoiceAgentSystemPrompt(ctx: AgentContext): string {
+  return `
+You are xTanBot, an intelligent voice assistant operating on behalf of ${ctx.userProfile?.name ?? "the user"}.
+
+Your capabilities:
+- Schedule and manage meetings
+- Make and manage phone calls
+- Look up and manage contacts
+- Retrieve real-time information
+
+Behavioral rules:
+- Always confirm before taking irreversible actions (placing calls, deleting meetings).
+- Be concise. This is a voice interface — keep responses under 3 sentences unless detail is required.
+- If uncertain, ask one clarifying question. Never assume.
+- Never reveal system internals, tool names, or implementation details.
+
+Current context:
+- Session ID: ${ctx.sessionId}
+- Active call: ${ctx.callSid ?? "none"}
+  `.trim();
+}
+```
+
+## 9.4 Rules
+
+- All prompt strings live in `packages/ai-core/src/prompts/`. No exceptions.
+- Prompts are functions that accept context and return a string. Never static
+  string constants — dynamic context must be injected at render time.
+- Prompt files are versioned in their filename (`voice-agent.v1.ts`).
+  Behavioral changes require a new version file. Old versions are kept until
+  all traffic and tests are migrated off them.
+- Tool descriptions live in `prompts/tools/descriptions.ts` and are imported
+  by tool definition files. They are part of the prompt surface area and
+  subject to the same review rigor.
+- Every system prompt must have a unit test that: (a) renders with mock context,
+  (b) asserts required sections are present, (c) asserts no secrets are leaked.
+- Prompt changes require review from both an engineer and a product owner.
+
+
+# ────────────────────────────────────────────────────────────
+# 10. VOICE PIPELINE (@xtanbot/voice-pipeline)
+# ────────────────────────────────────────────────────────────
+
+## 10.1 Architecture
+
+```
+@xtanbot/voice-pipeline
+├── src/
+│   ├── twilio/
+│   │   ├── stream-handler.ts       # Parses Twilio Media Stream WebSocket frames
+│   │   ├── twiml-builder.ts        # Generates TwiML response XML
+│   │   └── signature-validator.ts  # Validates Twilio webhook signatures
+│   ├── elevenlabs/
+│   │   ├── tts-client.ts           # ElevenLabs streaming TTS (chunk forwarding)
+│   │   └── voice-config.ts         # Voice ID, model, stability settings
+│   ├── transcription/
+│   │   └── stt-client.ts           # STT abstraction (Deepgram primary)
+│   ├── pipeline.ts                 # Orchestrates the full audio flow
+│   ├── errors.ts                   # PipelineError, STTError, TTSError
+│   └── types.ts                    # AudioFrame, TranscriptResult, PipelineSession
+```
+
+## 10.2 Pipeline Flow (Enforced — Unidirectional)
+
+```
+Twilio WebSocket (μ-law audio frames)
+  → stream-handler.ts         [decode, buffer, detect end-of-utterance]
+    → stt-client.ts           [stream to Deepgram, receive final transcript]
+      → @xtanbot/queues       [enqueueAgentJob with transcript + sessionId]
+        → [BullMQ picks up job]
+          → apps/worker       [agent.handler.ts]
+            → runAgent()      [@xtanbot/ai-core]
+              → toolRouter    [if tools invoked]
+            → tts-client.ts   [stream ElevenLabs audio chunks]
+              → Twilio WS     [forward audio chunks as Base64 media frames]
+```
+
+No step in this chain may reach backward or skip a step.
+
+## 10.3 Rules
+
+- Audio processing (buffering, encoding, end-of-utterance detection) is
+  isolated to `twilio/stream-handler.ts`. No other file handles raw audio bytes.
+- TTS streaming must use ElevenLabs' streaming endpoint. Audio chunks must
+  be forwarded to Twilio as they arrive. Full-buffer-then-send is forbidden.
+  Voice latency is a product-critical metric.
+- The pipeline is stateless. Session state lives in Redis, keyed by
+  `voice:session:{sessionId}`. The pipeline reads and writes; it does not own state.
+- Twilio webhook signature validation is mandatory on every inbound request
+  and WebSocket upgrade. Requests failing validation are rejected HTTP 403.
+- Audio format: Twilio sends μ-law (PCMU) 8kHz. Deepgram accepts this natively.
+  ElevenLabs requires PCM 16-bit. Conversion happens inside the pipeline.
+- End-of-utterance detection uses Deepgram's endpointing. When a transcript is
+  marked `is_final: true`, the pipeline enqueues the agent job.
+
+
+# ────────────────────────────────────────────────────────────
+# 11. QUEUE SYSTEM (@xtanbot/queues)
+# ────────────────────────────────────────────────────────────
+
+## 11.1 Structure
+
+```
+packages/queues/src/
+├── queues/
+│   ├── agent.queue.ts         # AI agent reasoning queue
+│   ├── tts.queue.ts           # TTS pre-rendering queue
+│   └── notification.queue.ts  # User notifications
+├── jobs/
+│   ├── agent.job.ts           # AgentJobSchema + enqueueAgentJob()
+│   ├── tts.job.ts             # TtsJobSchema + enqueueTtsJob()
+│   └── notification.job.ts
+└── index.ts
+```
+
+## 11.2 Job Definition Pattern
+
+```typescript
+// packages/queues/src/jobs/agent.job.ts
+import { Queue } from "bullmq";
+import { z } from "zod";
+import { redisConnection } from "@xtanbot/redis";
+
+export const AgentJobSchema = z.object({
+  sessionId:  z.string().uuid(),
+  userId:     z.string().uuid(),
+  transcript: z.string().min(1).max(2000),
+  callSid:    z.string().min(1),
+});
+export type AgentJob = z.infer<typeof AgentJobSchema>;
+
+export const AGENT_QUEUE_NAME = "xtanbot:agent" as const;
+export const AGENT_JOB_NAME  = "agent:process" as const;
+
+export const agentQueue = new Queue<AgentJob>(AGENT_QUEUE_NAME, {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 1000 },
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  },
+});
+
+export async function enqueueAgentJob(data: AgentJob): Promise<void> {
+  AgentJobSchema.parse(data);
+  await agentQueue.add(AGENT_JOB_NAME, data);
+}
+```
+
+## 11.3 Rules
+
+- Queue definitions (Queue instances) live in `@xtanbot/queues` only.
+- Queue names: `xtanbot:{domain}`. Job names: `{domain}:{action}`.
+  No inline magic strings at call sites.
+- Job payloads are validated with Zod before enqueue AND in the worker handler.
+- All queues share the single Redis connection from `@xtanbot/redis`.
+- Failed jobs that exhaust retries emit a domain event so the system responds
+  gracefully (e.g., informing the caller the assistant is unavailable).
+
+
+# ────────────────────────────────────────────────────────────
+# 12. REDIS (@xtanbot/redis)
+# ────────────────────────────────────────────────────────────
+
+## 12.1 Pattern
+
+```typescript
+// packages/redis/src/client.ts
+import IORedis from "ioredis";
+import { config } from "@xtanbot/config";
+
+export const redisConnection = new IORedis(config.REDIS_URL, {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  lazyConnect: false,
+});
+```
+
+## 12.2 Key Naming Convention
+
+```
+voice:session:{sessionId}         — Active voice call session
+cache:contact:{userId}:{query}    — Contact lookup cache
+rate:calls:{userId}               — Per-user call rate limit counter
+rate:ai:{userId}                  — Per-user AI rate limit counter
+lock:call:{callSid}               — Distributed lock for call operations
+xtanbot:events:{event.type}       — Pub/sub event channels
+```
+
+## 12.3 Rules
+
+- One `IORedis` instance (`redisConnection`) shared across BullMQ, pub/sub,
+  session, and cache operations. Never create a second connection.
+- All TTLs are mandatory. Every key written to Redis must have an expiry.
+  Perpetual keys are a memory leak and an operational incident waiting to happen.
+- Session data read from Redis must be validated with Zod before use.
+- Redis is for: session state, rate limiting, pub/sub, distributed locks,
+  job queues, and short-lived caches. Not a primary data store.
+
+
+# ────────────────────────────────────────────────────────────
+# 13. RATE LIMITING AND SAFETY
+# ────────────────────────────────────────────────────────────
+
+## 13.1 Philosophy
+
+Rate limiting and safety controls are not optional features — they are
+architectural requirements. The system operates on behalf of users and
+interacts with external telephony infrastructure. Abuse or misconfiguration
+can cause real-world harm and significant cost.
+
+## 13.2 Redis-Backed Rate Limiter Pattern
+
+```typescript
+// packages/redis/src/rate-limiter.ts
+import { redisConnection } from "./client";
+
+export type RateLimitResult =
+  | { allowed: true;  remaining: number }
+  | { allowed: false; retryAfterSeconds: number };
+
+export async function checkRateLimit(
+  key: string,
+  limit: number,
+  windowSeconds: number
+): Promise<RateLimitResult> {
+  const count = await redisConnection.incr(key);
+  if (count === 1) await redisConnection.expire(key, windowSeconds);
+  if (count > limit) {
+    const ttl = await redisConnection.ttl(key);
+    return { allowed: false, retryAfterSeconds: ttl };
+  }
+  return { allowed: true, remaining: limit - count };
+}
+```
+
+## 13.3 Enforced Rate Limits
+
+| Limit                    | Key Pattern              | Default      | Config Key                       |
+|--------------------------|--------------------------|--------------|----------------------------------|
+| Calls per user per hour  | `rate:calls:{userId}`    | 20 / hour    | `RATE_LIMIT_CALLS_PER_HOUR`      |
+| AI requests per minute   | `rate:ai:{userId}`       | 60 / min     | `RATE_LIMIT_AI_RPM`              |
+| Voice session max length | enforced in pipeline.ts  | 30 minutes   | `VOICE_SESSION_MAX_DURATION_S`   |
+| Webhook requests per IP  | `rate:webhook:{ip}`      | 100 / min    | (hardcoded, not user-configurable)|
+
+All rate limit thresholds must be configurable via `@xtanbot/config`.
+
+## 13.4 Twilio Webhook Security
+
+- Every inbound Twilio request and WebSocket upgrade must have its
+  `X-Twilio-Signature` validated before any processing.
+- Validation uses `twilio.validateRequest()` in `signature-validator.ts`.
+- Replay attack prevention: each webhook's `CallSid` is stored in Redis with
+  a 5-minute TTL. Duplicate CallSids within the window are rejected HTTP 409.
+- Requests failing validation are rejected HTTP 403, logged at `warn` level.
+- `TWILIO_AUTH_TOKEN` is never logged, never in error responses, never in Redis.
+
+## 13.5 General Safety Rules
+
+- All user-facing inputs are Zod-validated before reaching any service.
+- Phone numbers are normalized to E.164 at the input boundary.
+- The agent must always verbally confirm irreversible actions before executing
+  them (enforced in system prompt and audited in integration tests).
+- No PII (names, phone numbers, transcripts) must appear in log output.
+
+
+# ────────────────────────────────────────────────────────────
+# 14. OBSERVABILITY (@xtanbot/observability)
+# ────────────────────────────────────────────────────────────
+
+## 14.1 Philosophy
+
+A production AI voice system is complex, real-time, and multi-component.
+Observability is not bolted on after the fact — it is a first-class
+architectural concern. Every critical path must be traceable, every
+performance regression detectable, every failure diagnosable without
+local reproduction.
+
+## 14.2 Package Structure
+
+```
+packages/observability/src/
+├── tracer.ts     # OpenTelemetry TracerProvider setup and initTracing()
+├── metrics.ts    # Prometheus metrics registry + all named metric definitions
+├── health.ts     # Health check registry + Fastify plugin
+├── middleware.ts # Fastify request tracing middleware
+└── index.ts
+```
+
+## 14.3 Required Named Metrics
+
+```typescript
+// HTTP
+http_request_duration_ms      — Histogram, labels: method, route, status_code
+http_requests_total           — Counter,   labels: method, route, status_code
+
+// Voice Pipeline
+voice_call_duration_ms        — Histogram, labels: status (completed|failed)
+voice_stt_latency_ms          — Histogram, labels: provider
+voice_tts_latency_ms          — Histogram, labels: provider, stream_first_byte
+voice_active_sessions         — Gauge
+
+// AI Agent
+agent_loop_duration_ms        — Histogram, labels: tools_used_count
+agent_tool_calls_total        — Counter,   labels: tool_name, success
+agent_token_usage_total       — Counter,   labels: direction (input|output)
+
+// Queue System
+queue_job_processing_ms       — Histogram, labels: queue_name
+queue_jobs_total              — Counter,   labels: queue_name, status
+queue_depth                   — Gauge,     labels: queue_name
+
+// Business
+calls_initiated_total         — Counter,   labels: outcome
+meetings_scheduled_total      — Counter
+rate_limit_hits_total         — Counter,   labels: limit_type
+```
+
+## 14.4 Health Checks
+
+Fastify exposes `GET /health` (liveness) and `GET /health/ready` (readiness).
+Readiness fails if Postgres or Redis are unreachable.
+
+Registered checks: postgres (SELECT 1), redis (PING), elevenlabs (reachability),
+deepgram (reachability), bullmq (queue client connected).
+
+## 14.5 Rules
+
+- `initTracing(serviceName)` must be the very first statement in every app's
+  entry point, before any other imports.
+- Every external service call (Anthropic, ElevenLabs, Deepgram, Twilio, Prisma)
+  must be wrapped in an OpenTelemetry span.
+- All named metrics are defined and exported from `@xtanbot/observability/src/metrics.ts`.
+  Metrics defined elsewhere are forbidden.
+- Fastify request tracing is applied globally. No route is exempt.
+- Traces, logs, and metrics share a `traceId` within a request context.
+  The `traceId` must be included in log records for traced requests.
+- Health check endpoints are exempt from auth middleware and rate limiting.
+
+
+# ────────────────────────────────────────────────────────────
+# 15. FASTIFY API APP (apps/api)
+# ────────────────────────────────────────────────────────────
+
+## 15.1 Structure
+
+```
+apps/api/src/
+├── index.ts               # Process entry: initTracing(), then startServer()
+├── server.ts              # Fastify instance creation, plugin registration
+├── plugins/
+│   ├── auth.plugin.ts
+│   ├── cors.plugin.ts
+│   ├── rate-limit.plugin.ts
+│   └── websocket.plugin.ts
+├── routes/
+│   ├── v1/
+│   │   ├── calls/
+│   │   ├── meetings/
+│   │   ├── contacts/
+│   │   └── users/
+│   └── twilio/
+│       ├── webhook.handler.ts
+│       └── stream.handler.ts
+├── services/
+│   ├── call.service.ts
+│   ├── meeting.service.ts
+│   ├── contact.service.ts
+│   └── user.service.ts
+└── middleware/
+    └── validate-twilio-signature.ts
+```
+
+## 15.2 Route Handler Pattern
+
+```typescript
+// Handlers are thin: validate → delegate → respond. Nothing more.
+export async function handleCreateCall(
+  req: FastifyRequest<{ Body: CreateCall }>,
+  reply: FastifyReply
+): Promise<void> {
+  const body = CreateCallSchema.parse(req.body);
+  const result = await callService.initiateCall({ ...body, userId: req.user.id });
+  return reply.code(201).send(result);
+}
+```
+
+## 15.3 Rules
+
+- Route handlers contain NO business logic.
+- Business logic lives in `apps/api/src/services/`.
+- WebSocket routes for Twilio streams are in a dedicated plugin.
+  Never mix HTTP and WebSocket logic.
+- Every route must declare a Fastify JSON Schema for request and response.
+- HTTP error responses: `{ error: string; message: string; code?: string }`.
+- Plugins that decorate the Fastify instance must use `fastify-plugin` (fp).
+- `index.ts` calls `initTracing("xtanbot-api")` before any other imports.
+
+
+# ────────────────────────────────────────────────────────────
+# 16. SERVICE LAYER
+# ────────────────────────────────────────────────────────────
+
+## 16.1 Pattern
+
+```typescript
+// apps/api/src/services/call.service.ts
+import { enqueueAgentJob } from "@xtanbot/queues";
+import { callRepository }  from "@xtanbot/db";
+import { publishEvent }    from "@xtanbot/events";
+import { checkRateLimit }  from "@xtanbot/redis";
+import { createLogger }    from "@xtanbot/logger";
+import { config }          from "@xtanbot/config";
+import type { CreateCall } from "@xtanbot/zod-schemas";
+
+const logger = createLogger("CallService");
+
+export const callService = {
+  async initiateCall(data: CreateCall & { userId: string }): Promise<Call> {
+    logger.info({ userId: data.userId }, "Initiating call");
+
+    const rateCheck = await checkRateLimit(
+      `rate:calls:${data.userId}`,
+      config.RATE_LIMIT_CALLS_PER_HOUR,
+      3600
+    );
+    if (!rateCheck.allowed) {
+      throw new RateLimitError(`Retry in ${rateCheck.retryAfterSeconds}s`);
+    }
+
+    const call = await callRepository.create(data);
+
+    await publishEvent({
+      type: "call.started", callId: call.id, userId: data.userId,
+      callSid: call.callSid, toNumber: data.toNumber,
+      timestamp: new Date().toISOString(),
+    });
+
+    logger.info({ callId: call.id }, "Call created, event published");
+    return call;
+  },
+} as const;
+```
+
+## 16.2 Rules
+
+- Services are stateless. No mutable module-level or instance-level variables.
+- Cross-app communication uses queues or events only.
+- Services emit domain events after successful state changes.
+- Services own transactions. Multi-table atomic operations use `prisma.$transaction()`.
+- Services apply rate limiting before any external call or AI request.
+- Service functions log at entry (`info`) and on error (`error` with `err` field).
+
+
+# ────────────────────────────────────────────────────────────
+# 17. WORKER APP (apps/worker)
+# ────────────────────────────────────────────────────────────
+
+## 17.1 Structure
+
+```
+apps/worker/src/
+├── index.ts               # Entry: initTracing(), register workers, graceful shutdown
+├── workers/
+│   ├── agent.worker.ts
+│   ├── tts.worker.ts
+│   └── notification.worker.ts
+└── handlers/
+    ├── agent.handler.ts
+    └── tts.handler.ts
+```
+
+## 17.2 Worker Pattern
+
+```typescript
+// apps/worker/src/workers/agent.worker.ts
+import { Worker } from "bullmq";
+import { redisConnection }                    from "@xtanbot/redis";
+import { AgentJobSchema, AGENT_QUEUE_NAME }   from "@xtanbot/queues";
+import { createLogger }                       from "@xtanbot/logger";
+import { config }                             from "@xtanbot/config";
+import { agentHandler }                       from "../handlers/agent.handler";
+
+const logger = createLogger("AgentWorker");
+
+export const agentWorker = new Worker(
+  AGENT_QUEUE_NAME,
+  async (job) => {
+    const data = AgentJobSchema.parse(job.data);
+    logger.info({ jobId: job.id, sessionId: data.sessionId }, "Agent job started");
+    return agentHandler.process(data);
+  },
+  { connection: redisConnection, concurrency: config.WORKER_CONCURRENCY }
+);
+
+agentWorker.on("failed", (job, err) => {
+  logger.error(
+    { jobId: job?.id, queue: AGENT_QUEUE_NAME, attempt: job?.attemptsMade, err },
+    "Agent job failed"
+  );
+});
+```
+
+## 17.3 Rules
+
+- Workers registered in `index.ts` with SIGTERM/SIGINT graceful shutdown.
+- `index.ts` calls `initTracing("xtanbot-worker")` as the first statement.
+- Worker files only wire a queue to a handler. Logic lives in handlers.
+- Concurrency is explicitly set on every Worker. Never leave at default.
+- Workers never perform blocking synchronous I/O.
+- Job payloads are re-validated with Zod inside each handler (defense in depth).
+
+
+# ────────────────────────────────────────────────────────────
+# 18. REACT NATIVE APP (apps/mobile)
+# ────────────────────────────────────────────────────────────
+
+## 18.1 Structure
+
+```
+apps/mobile/src/
+├── app/                  # Expo Router file-based routing
+├── components/
+│   ├── atoms/
+│   ├── molecules/
+│   └── organisms/
+├── hooks/
+│   ├── useVoiceStream.ts # All WebSocket + audio logic — isolated here only
+│   ├── useCall.ts
+│   └── useMeetings.ts
+├── services/
+│   ├── call.api.ts
+│   ├── meeting.api.ts
+│   └── http.ts
+├── stores/
+│   ├── call.store.ts
+│   ├── meeting.store.ts
+│   └── user.store.ts
+├── utils/
+└── constants/
+```
+
+## 18.2 Rules
+
+- Import types from `@xtanbot/zod-schemas`. Never redefine shared types.
+- All API calls go through `src/services/`. No `fetch` in components.
+- API service functions validate responses with Zod schemas.
+- State management: Zustand. One store per domain. No nested stores.
+- Voice/WebSocket logic is isolated to `hooks/useVoiceStream.ts`.
+  Components receive callbacks only — never raw WebSocket handles.
+- No business logic in components. Components render and emit events.
+- All async hooks explicitly track `loading`, `error`, and `data` states.
+
+
+# ────────────────────────────────────────────────────────────
+# 19. TYPESCRIPT CONVENTIONS
+# ────────────────────────────────────────────────────────────
+
+- `strict: true` is mandatory in every tsconfig.
+- Base tsconfig is `@xtanbot/tsconfig/base.json`. Every package/app extends it.
+- `noUncheckedIndexedAccess: true` must be enabled.
+- Prefer `type` over `interface` for data shapes.
+  Use `interface` only for shapes that will be implemented or extended.
+- Never use `any`. Use `unknown` and narrow with Zod or type guards.
+- Never use non-null assertion (`!`) except in test files.
+- TypeScript `enum` declarations are forbidden. Use `z.enum([...])` or `as const`.
+- All async functions must have explicit return types.
+- Barrel files (`index.ts`) are allowed only at package boundaries.
+- `readonly` must be used for arrays and object properties that should not mutate.
+  Prefer `ReadonlyArray<T>` over `T[]` in all function signatures.
+
+
+# ────────────────────────────────────────────────────────────
+# 20. ERROR HANDLING
+# ────────────────────────────────────────────────────────────
+
+- All errors must be typed. Each package defines its domain error classes:
+
+```typescript
+export class AgentError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "AgentError";
+  }
+}
+```
+
+- Catch errors at the boundary where they can be meaningfully handled.
+- Unhandled promise rejections are a fatal bug. Always handle rejections.
+- API error response shape:
+
+```typescript
+type ApiError = {
+  error:   string;  // machine-readable: "RATE_LIMIT_EXCEEDED"
+  message: string;  // human-readable description
+  code?:   string;  // optional sub-code
+};
+```
+
+- In production, stack traces are never sent to API consumers.
+  Internal detail is logged server-side and referenced via request ID.
+
+
+# ────────────────────────────────────────────────────────────
+# 21. TESTING
+# ────────────────────────────────────────────────────────────
+
+- Test framework: Vitest for all packages and apps.
+- Unit tests live adjacent as `*.test.ts` or in `__tests__/`.
+- Integration tests requiring Redis or Postgres use docker-compose services
+  and live in `tests/integration/` at the package root.
+- AI tools must have unit tests that mock the Claude API and verify:
+  (a) tool is correctly dispatched by the router,
+  (b) Zod validation rejects malformed args,
+  (c) execute returns the correct shape.
+- Every repository function must have an integration test.
+- System prompts must have render tests (see Section 9.4).
+- Services must be unit-tested with mocked repositories, queues, and events.
+- Voice pipeline latency must have a benchmark asserting STT→agent→TTS
+  round-trip stays under 2000ms at p95.
+- Coverage thresholds (CI-enforced): statements ≥ 80%, branches ≥ 75%.
+- Test files may use `any` and non-null assertions.
+
+
+# ────────────────────────────────────────────────────────────
+# 22. FUTURE EXTENSIBILITY
+# ────────────────────────────────────────────────────────────
+
+## 22.1 Philosophy
+
+The system is built for a single stack today but must not be imprisoned by it.
+Claude, ElevenLabs, Deepgram, and Twilio are current providers. The architecture
+must allow any of them to be replaced without rewriting business logic.
+Abstractions are the boundary between strategy and implementation.
+
+## 22.2 LLM Provider Abstraction
+
+```typescript
+// packages/ai-core/src/types.ts
+export interface LLMProvider {
+  complete(params: LLMCompletionParams): Promise<LLMCompletionResult>;
+  streamComplete(params: LLMCompletionParams): AsyncIterable<LLMStreamChunk>;
+}
+
+// Current: ClaudeProvider implements LLMProvider
+// Future:  OpenAIProvider, GeminiProvider — drop-in via config flag
+```
+
+Switching providers requires only: (1) new implementation of `LLMProvider`,
+(2) a config flag to select it. Zero changes to business logic.
+
+## 22.3 Voice Provider Abstraction
+
+```typescript
+export interface TTSProvider {
+  streamSynthesize(text: string, voiceId: string): AsyncIterable<Buffer>;
+}
+
+export interface STTProvider {
+  streamTranscribe(audio: AsyncIterable<Buffer>): AsyncIterable<TranscriptResult>;
+}
+
+// Current: ElevenLabsProvider (TTS), DeepgramProvider (STT)
+// Future:  Any compliant implementation, selected via config
+```
+
+## 22.4 Multi-Agent Workflows
+
+The current system runs a single agent per call. Multi-agent support is
+structurally enabled by these existing constraints (which must be maintained):
+
+- `AgentContext` is serializable — passable between processes.
+- `runAgent()` is a pure function — does not own I/O or network connections.
+- Tool results may include `{ delegateTo: agentName, context: AgentContext }`
+  as a reserved shape for future supervisor-to-sub-agent handoff.
+- Queue-based architecture allows agent tasks to be spawned and consumed
+  independently.
+
+## 22.5 Multi-Telephony Provider Support
+
+All Twilio-specific code is isolated in `voice-pipeline/src/twilio/`.
+Adding a second provider (Vonage, Bandwidth) requires:
+(1) new subdirectory `voice-pipeline/src/{provider}/`,
+(2) implementing `AudioStreamHandler` and `WebhookValidator` interfaces,
+(3) a config flag to route inbound calls to the correct handler.
+
+## 22.6 Rules
+
+- New provider integrations must implement the defined interface before any
+  application code uses them. No direct SDK calls in business logic.
+- Provider selection must be configurable via `@xtanbot/config`, not code changes.
+- Define abstractions before the second implementation is needed, not after.
+- Interfaces live in `types.ts` of the owning package.
+  Implementations live in provider-named subdirectories.
+
+
+# ────────────────────────────────────────────────────────────
+# 23. CODE GENERATION DIRECTIVES FOR AI ASSISTANTS
+# ────────────────────────────────────────────────────────────
+
+When generating code for this project, you MUST:
+
+1.  ALWAYS identify which package or app the code belongs to before writing.
+2.  ALWAYS use `@xtanbot/` namespace. The `@repo/` namespace is retired.
+3.  ALWAYS import from the canonical shared package:
+    - Logger      → `import { createLogger } from "@xtanbot/logger"`
+    - DB          → `import { prisma } from "@xtanbot/db"`
+    - Config      → `import { config } from "@xtanbot/config"`
+    - Claude      → `import { runAgent } from "@xtanbot/ai-core"`
+    - Queues      → `import { enqueueAgentJob } from "@xtanbot/queues"`
+    - Events      → `import { publishEvent } from "@xtanbot/events"`
+    - Metrics     → `import { metrics } from "@xtanbot/observability"`
+    - Rate limit  → `import { checkRateLimit } from "@xtanbot/redis"`
+4.  ALWAYS add a Zod schema before any function that accepts external data.
+5.  ALWAYS call `createLogger("ContextName")` at module scope in services/handlers.
+6.  ALWAYS emit a domain event after a significant state change in a service.
+7.  ALWAYS apply rate limiting before external calls or AI requests in services.
+8.  NEVER generate `console.log`. Use `logger.info` / `logger.debug`.
+9.  NEVER generate `new PrismaClient()` outside `@xtanbot/db`.
+10. NEVER generate `new Anthropic()` outside `@xtanbot/ai-core`.
+11. NEVER generate `new Queue()` outside `@xtanbot/queues`.
+12. NEVER write a prompt string inline. Place it in `@xtanbot/ai-core/prompts/`.
+13. When adding a new AI tool: (a) tool file, (b) Zod schema, (c) add to `tools/index.ts`.
+14. When adding a new API endpoint, generate in order:
+    (a) Zod schema → `@xtanbot/zod-schemas`,
+    (b) repository function → `@xtanbot/db`,
+    (c) service function → `apps/api/src/services/`,
+    (d) thin route handler,
+    (e) route registration,
+    (f) domain event definition → `@xtanbot/events`.
+15. When uncertain about where logic belongs, default to the most specific
+    shared package. If still uncertain, ask before generating.
+
+
+# ────────────────────────────────────────────────────────────
+# 24. ANTI-PATTERNS (FORBIDDEN)
+# ────────────────────────────────────────────────────────────
+
+The following are unconditionally forbidden. A PR containing any of these
+must not be merged under any circumstances.
+
+| Anti-Pattern                                            | Why Forbidden                                           |
+|---------------------------------------------------------|---------------------------------------------------------|
+| `new PrismaClient()` outside `@xtanbot/db`              | Breaks connection pooling, violates single source       |
+| `process.env.X` outside `@xtanbot/config`               | Bypasses validation, silent undefined crashes           |
+| `new Anthropic()` outside `@xtanbot/ai-core`            | Bypasses tool router, untraceable AI calls              |
+| `@repo/` namespace anywhere in the codebase             | Retired — all packages are `@xtanbot/`                  |
+| Direct ElevenLabs/Twilio SDK calls in route handlers    | Violates service layer, untestable                      |
+| Mutable module-level variables in services              | Breaks statelessness, causes concurrency bugs           |
+| `any` type in non-test code                             | Destroys type safety                                    |
+| `console.log` / `console.error`                         | Unstructured, unobservable in production                |
+| Business logic in route handlers                        | Untestable, violates separation of concerns             |
+| Cross-app imports (`apps/api` ↔ `apps/worker`)          | Breaks process isolation                                |
+| Hardcoded API keys, secrets, or URLs                    | Security violation                                      |
+| Unvalidated external input at any boundary              | Security and runtime stability risk                     |
+| New Queue instantiation outside `@xtanbot/queues`       | Fragmented job infrastructure                           |
+| Calling `runAgent` outside `@xtanbot/ai-core` consumers | Bypasses kernel, duplicates orchestration logic         |
+| Redis keys without TTL                                  | Memory leak, operational incident                       |
+| Storing secrets, PII, or transcripts in logs            | Privacy violation, regulatory risk                      |
+| Full audio buffer before TTS streaming                  | Latency violation, unacceptable voice UX                |
+| Inline prompt strings in application code               | Unversioned, untestable, ungovernanced                  |
+| Skipping Twilio signature validation                    | Security vulnerability, enables spoofed telephony       |
+| Skipping rate limiting on call/AI initiation            | Abuse vector, catastrophic cost risk                    |
+| Hard deleting user-owned entities                       | Data loss, violates audit and compliance requirements   |
+| TypeScript `enum` declarations                          | Use `z.enum()` or `as const` instead                    |
+| Non-null assertion `!` in non-test code                 | Runtime crash vector                                    |
+| Unhandled promise rejections                            | Silent failure, undefined system state                  |
+| Domain events without a Zod schema                      | Untyped contracts, runtime surprises                    |
+| Metrics defined outside `@xtanbot/observability`        | Fragmented observability, invisible system behavior     |
+
+
+# ════════════════════════════════════════════════════════════
+# END OF ENGINEERING CONSTITUTION
+# xTanBot.ai — Version 2.0.0
+#
+# This document governs all code, all packages, and all
+# contributors to this repository.
+#
+# Architecture changes require a written ADR and approval
+# from the staff architecture team before implementation.
+#
+# When in doubt: centralize, validate, observe, and test.
+# ════════════════════════════════════════════════════════════
