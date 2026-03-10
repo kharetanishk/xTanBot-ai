@@ -1,2 +1,2 @@
-export * from "./call.events.js";
-export * from "./agent.events.js";
+export { agentEvents } from "./agent.events";
+export { callEvents } from "./call.events";

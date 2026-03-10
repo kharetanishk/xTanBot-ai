@@ -1,3 +1,14 @@
-export { createRedisClient } from "./client.js";
-export { checkRateLimit } from "./rate-limit.js";
-export { getSession, setSession, deleteSession } from "./session.js";
+export { redisConnection } from "./client";
+export {
+  getSession,
+  setSession,
+  deleteSession,
+  refreshSession,
+} from "./session";
+export {
+  checkRateLimit,
+  getRateLimitCount,
+  resetRateLimit,
+} from "./rate-limiter";
+export { cacheGet, cacheSet, cacheDelete, cacheMGet } from "./cache";
+export type { RateLimitResult } from "./rate-limiter";

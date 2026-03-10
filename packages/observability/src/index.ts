@@ -1,3 +1,3 @@
-export { metrics } from "./metrics.js";
-export { createTracer } from "./tracing.js";
-export { healthCheck } from "./health.js";
+export { metrics } from "./metrics";
+export { createTracer } from "./tracing";
+export { healthCheck } from "./health";

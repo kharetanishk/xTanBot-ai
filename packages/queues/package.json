@@ -1,29 +1,30 @@
 {
   "name": "@xtanbot/queues",
-  "version": "0.1.0",
-  "description": "BullMQ queue/job definitions and producers for xTanBot.ai",
+  "version": "1.0.0",
+  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
-    "lint": "tsc --noEmit",
+    "build": "tsc",
+    "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@xtanbot/config": "workspace:*",
     "@xtanbot/logger": "workspace:*",
-    "@xtanbot/redis": "workspace:*",
-    "bullmq": "^5.0.0"
+    "bullmq": "^5.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.3",
-    "typescript": "^5.9.3"
+    "@xtanbot/tsconfig": "workspace:*",
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0"
   }
 }

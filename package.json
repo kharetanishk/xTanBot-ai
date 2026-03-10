@@ -7,15 +7,27 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "db:generate": "turbo run db:generate --filter=@xtanbot/db",
+    "db:migrate": "turbo run db:migrate --filter=@xtanbot/db",
+    "db:push": "turbo run db:push --filter=@xtanbot/db",
+    "docker:up": "docker compose -f infrastructure/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infrastructure/docker/docker-compose.yml down"
   },
   "devDependencies": {
     "prettier": "^3.7.4",
     "turbo": "^2.8.15",
-    "typescript": "5.9.2"
+    "typescript": "^5.4.0",
+    "@types/node": "^20.12.0"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "ioredis": "^5.3.0"
+    }
   }
 }

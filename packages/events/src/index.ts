@@ -1,2 +1,3 @@
-export { publishEvent } from "./emitter.js";
-export * from "./schemas/index.js";
+export { publishEvent } from "./emitter";
+export { agentEvents } from "./schemas/agent.events";
+export { callEvents } from "./schemas/call.events";

@@ -1,0 +1,15 @@
+{
+  "name": "@xtanbot/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "base.json",
+    "node.json",
+    "react-native.json",
+    "react-library.json"
+  ]
+}

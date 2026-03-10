@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
+    "@xtanbot/tsconfig": "workspace:^",
     "typescript": "^5.9.3"
   }
 }

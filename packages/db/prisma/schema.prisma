@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  timezone  String   @default("UTC")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  calls         Call[]
+  meetings      Meeting[]
+  contacts      Contact[]
+  conversations Conversation[]
+
+  @@map("users")
+}
+
+// ─── Calls ────────────────────────────────────────────────
+
+model Call {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  callSid     String    @unique @map("call_sid")
+  toNumber    String    @map("to_number")
+  fromNumber  String    @map("from_number")
+  status      CallStatus @default(initiated)
+  duration    Int?
+  summary     String?
+  startedAt   DateTime? @map("started_at")
+  endedAt     DateTime? @map("ended_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id])
+  conversation Conversation?
+
+  @@map("calls")
+}
+
+enum CallStatus {
+  initiated
+  ringing
+  in_progress
+  completed
+  failed
+  busy
+  no_answer
+
+  @@map("call_status")
+}
+
+// ─── Meetings ─────────────────────────────────────────────
+
+model Meeting {
+  id          String        @id @default(uuid())
+  userId      String        @map("user_id")
+  title       String
+  description String?
+  startTime   DateTime      @map("start_time")
+  endTime     DateTime      @map("end_time")
+  attendees   String[]
+  location    String?
+  meetingUrl  String?       @map("meeting_url")
+  timezone    String        @default("UTC")
+  status      MeetingStatus @default(scheduled)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  deletedAt   DateTime?     @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("meetings")
+}
+
+enum MeetingStatus {
+  scheduled
+  confirmed
+  cancelled
+  completed
+  rescheduled
+
+  @@map("meeting_status")
+}
+
+// ─── Contacts ─────────────────────────────────────────────
+
+model Contact {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  email     String?
+  phone     String?
+  company   String?
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("contacts")
+}
+
+// ─── Conversations ────────────────────────────────────────
+
+model Conversation {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  callId    String?  @unique @map("call_id")
+  summary   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  call     Call?     @relation(fields: [callId], references: [id])
+  messages Message[]
+
+  @@map("conversations")
+}
+
+// ─── Messages ─────────────────────────────────────────────
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String      @map("conversation_id")
+  role           MessageRole
+  content        String
+  toolsUsed      String[]    @map("tools_used")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@map("messages")
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+
+  @@map("message_role")
+}
