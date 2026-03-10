@@ -1,0 +1,28 @@
+{
+  "name": "@xtanbot/voice-pipeline",
+  "version": "0.1.0",
+  "description": "Twilio stream handler, ElevenLabs TTS, Deepgram STT for xTanBot.ai",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@xtanbot/config": "workspace:*",
+    "@xtanbot/logger": "workspace:*",
+    "@xtanbot/observability": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.9.3"
+  }
+}

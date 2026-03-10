@@ -1,8 +1,8 @@
 {
-  "name": "@xtanbot/api",
+  "name": "@xtanbot/worker",
   "version": "0.1.0",
   "private": true,
-  "description": "Fastify HTTP + WebSocket server for xTanBot.ai",
+  "description": "BullMQ job consumers for xTanBot.ai",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -13,10 +13,8 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@fastify/cors": "^10.0.1",
-    "fastify": "^5.8.2",
-    "pino": "^10.3.1",
-    "zod": "^4.3.6"
+    "bullmq": "^5.0.0",
+    "pino": "^10.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
