@@ -2,7 +2,9 @@ import { z } from "zod";
 import dotenv from "dotenv";
 import path from "path";
 
-dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+// Resolves to repo root from packages/config/dist/
+const rootDir = path.resolve(__dirname, "..", "..", "..");
+dotenv.config({ path: path.join(rootDir, ".env") });
 
 const EnvSchema = z.object({
   // ─── App ─────────────────────────────────────────

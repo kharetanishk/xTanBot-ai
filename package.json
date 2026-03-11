@@ -15,10 +15,11 @@
     "docker:down": "docker compose -f infrastructure/docker/docker-compose.yml down"
   },
   "devDependencies": {
+    "@types/node": "^20.12.0",
     "prettier": "^3.7.4",
+    "tsx": "^4.21.0",
     "turbo": "^2.8.15",
-    "typescript": "^5.4.0",
-    "@types/node": "^20.12.0"
+    "typescript": "^5.4.0"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
