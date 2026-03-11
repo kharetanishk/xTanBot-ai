@@ -404,47 +404,44 @@ importers:
   packages/voice-pipeline:
     dependencies:
       '@deepgram/sdk':
-        specifier: ^5.0.0
-        version: 5.0.0
+        specifier: ^3.5.0
+        version: 3.13.0
       '@xtanbot/config':
         specifier: workspace:*
         version: link:../config
       '@xtanbot/events':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../events
       '@xtanbot/logger':
         specifier: workspace:*
         version: link:../logger
-      '@xtanbot/observability':
-        specifier: workspace:*
-        version: link:../observability
       '@xtanbot/queues':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../queues
       '@xtanbot/redis':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../redis
       elevenlabs:
-        specifier: ^1.59.0
+        specifier: ^1.50.0
         version: 1.59.0
       twilio:
-        specifier: ^5.12.2
+        specifier: ^5.3.0
         version: 5.12.2
       ws:
-        specifier: ^8.19.0
+        specifier: ^8.17.0
         version: 8.19.0
     devDependencies:
       '@types/node':
-        specifier: ^22.15.3
-        version: 22.15.3
+        specifier: ^20.12.0
+        version: 20.19.37
       '@types/ws':
-        specifier: ^8.18.1
+        specifier: ^8.5.10
         version: 8.18.1
       '@xtanbot/tsconfig':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../tsconfig
       typescript:
-        specifier: ^5.9.3
+        specifier: ^5.4.0
         version: 5.9.3
 
   packages/zod-schemas:
@@ -1127,8 +1124,12 @@ packages:
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
 
-  '@deepgram/sdk@5.0.0':
-    resolution: {integrity: sha512-x1wMiOgDGqcLEaQpQBQLTtk5mLbXbYgcBEpp7cfJIyEtqdIGgijCZH+a/esiVp+xIcTYYroTxG47RVppZOHbWw==}
+  '@deepgram/captions@1.2.0':
+    resolution: {integrity: sha512-8B1C/oTxTxyHlSFubAhNRgCbQ2SQ5wwvtlByn8sDYZvdDtdn/VE2yEPZ4BvUnrKWmsbTQY6/ooLV+9Ka2qmDSQ==}
+    engines: {node: '>=18.0.0'}
+
+  '@deepgram/sdk@3.13.0':
+    resolution: {integrity: sha512-VFN4gbyIDl5Bj0ApERq4QJHzO2AK4YOoL5Lfoy//q9531+UIzaKCNie4NkBM2Kn/UndHH7tIR335SH14e2r+Ag==}
     engines: {node: '>=18.0.0'}
 
   '@esbuild/aix-ppc64@0.27.3':
@@ -2305,6 +2306,9 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+
+  cross-fetch@3.2.0:
+    resolution: {integrity: sha512-Q+xVJLoGOeIMXZmbUK4HYk+69cQH6LudR0Vu/pRm2YlU/hDV9CiS0gKUMaWY5f2NeUH9C1nV3bsTlCo0FsTV1Q==}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -5713,11 +5717,21 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.9
     optional: true
 
-  '@deepgram/sdk@5.0.0':
+  '@deepgram/captions@1.2.0':
     dependencies:
+      dayjs: 1.11.19
+
+  '@deepgram/sdk@3.13.0':
+    dependencies:
+      '@deepgram/captions': 1.2.0
+      '@types/node': 18.19.130
+      cross-fetch: 3.2.0
+      deepmerge: 4.3.1
+      events: 3.3.0
       ws: 8.19.0
     transitivePeerDependencies:
       - bufferutil
+      - encoding
       - utf-8-validate
 
   '@esbuild/aix-ppc64@0.27.3':
@@ -7302,6 +7316,12 @@ snapshots:
   cron-parser@4.9.0:
     dependencies:
       luxon: 3.7.2
+
+  cross-fetch@3.2.0:
+    dependencies:
+      node-fetch: 2.7.0
+    transitivePeerDependencies:
+      - encoding
 
   cross-spawn@7.0.6:
     dependencies:

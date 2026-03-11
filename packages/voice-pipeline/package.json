@@ -1,37 +1,36 @@
 {
   "name": "@xtanbot/voice-pipeline",
-  "version": "0.1.0",
-  "description": "Twilio stream handler, ElevenLabs TTS, Deepgram STT for xTanBot.ai",
+  "version": "1.0.0",
+  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "lint": "tsc --noEmit",
+    "dev": "tsc --watch --project tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@deepgram/sdk": "^5.0.0",
+    "@deepgram/sdk": "^3.5.0",
     "@xtanbot/config": "workspace:*",
-    "@xtanbot/events": "workspace:^",
+    "@xtanbot/events": "workspace:*",
     "@xtanbot/logger": "workspace:*",
-    "@xtanbot/observability": "workspace:*",
-    "@xtanbot/queues": "workspace:^",
-    "@xtanbot/redis": "workspace:^",
-    "elevenlabs": "^1.59.0",
-    "twilio": "^5.12.2",
-    "ws": "^8.19.0"
+    "@xtanbot/queues": "workspace:*",
+    "@xtanbot/redis": "workspace:*",
+    "elevenlabs": "^1.50.0",
+    "twilio": "^5.3.0",
+    "ws": "^8.17.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.3",
-    "@types/ws": "^8.18.1",
-    "@xtanbot/tsconfig": "workspace:^",
-    "typescript": "^5.9.3"
+    "@xtanbot/tsconfig": "workspace:*",
+    "@types/node": "^20.12.0",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.4.0"
   }
 }
