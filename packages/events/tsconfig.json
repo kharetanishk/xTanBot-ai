@@ -1,6 +1,13 @@
 {
   "extends": "@xtanbot/tsconfig/node.json",
-  "compilerOptions": { "outDir": "dist", "rootDir": "src" },
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "paths": {
+      "@xtanbot/logger": ["../logger/dist/index.d.ts"],
+      "@xtanbot/redis": ["../redis/dist/index.d.ts"]
+    }
+  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

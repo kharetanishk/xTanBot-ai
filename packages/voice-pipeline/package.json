@@ -17,12 +17,21 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@deepgram/sdk": "^5.0.0",
     "@xtanbot/config": "workspace:*",
+    "@xtanbot/events": "workspace:^",
     "@xtanbot/logger": "workspace:*",
-    "@xtanbot/observability": "workspace:*"
+    "@xtanbot/observability": "workspace:*",
+    "@xtanbot/queues": "workspace:^",
+    "@xtanbot/redis": "workspace:^",
+    "elevenlabs": "^1.59.0",
+    "twilio": "^5.12.2",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
+    "@types/ws": "^8.18.1",
+    "@xtanbot/tsconfig": "workspace:^",
     "typescript": "^5.9.3"
   }
 }

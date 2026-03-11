@@ -1,3 +1,4 @@
-export { publishEvent } from "./emitter";
-export { agentEvents } from "./schemas/agent.events";
-export { callEvents } from "./schemas/call.events";
+export { publishEvent, subscribeToEvent } from "./bus";
+export { emit } from "./emitter";
+export * from "./events";
+export type { DomainEvent } from "./types";
