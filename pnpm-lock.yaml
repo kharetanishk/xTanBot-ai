@@ -141,8 +141,8 @@ importers:
   packages/ai-core:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.36.0
-        version: 0.36.3
+        specifier: ^0.27.0
+        version: 0.27.3
       '@xtanbot/config':
         specifier: workspace:*
         version: link:../config
@@ -153,17 +153,17 @@ importers:
         specifier: workspace:*
         version: link:../zod-schemas
       zod:
-        specifier: ^4.3.6
-        version: 4.3.6
+        specifier: ^3.23.0
+        version: 3.25.76
     devDependencies:
       '@types/node':
-        specifier: ^22.15.3
-        version: 22.15.3
+        specifier: ^20.12.0
+        version: 20.19.37
       '@xtanbot/tsconfig':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../tsconfig
       typescript:
-        specifier: ^5.9.3
+        specifier: ^5.4.0
         version: 5.9.3
 
   packages/config:
@@ -432,8 +432,8 @@ importers:
 
 packages:
 
-  '@anthropic-ai/sdk@0.36.3':
-    resolution: {integrity: sha512-+c0mMLxL/17yFZ4P5+U6bTWiCSFZUKJddrv01ud2aFBWnTPLdRncYV76D3q1tqfnL7aCnhRtykFnoCFzvr4U3Q==}
+  '@anthropic-ai/sdk@0.27.3':
+    resolution: {integrity: sha512-IjLt0gd3L4jlOfilxVXTifn42FnVffMgDC04RJK1KDZpmkBWLv0XC92MVVmkxrFZNS/7l3xWgP/I3nqtX1sQHw==}
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -4737,7 +4737,7 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.36.3':
+  '@anthropic-ai/sdk@0.27.3':
     dependencies:
       '@types/node': 18.19.130
       '@types/node-fetch': 2.6.13

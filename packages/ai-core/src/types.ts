@@ -1,33 +1,50 @@
-export interface AgentContext {
-  callId: string;
-  sessionId: string;
-  transcript: string[];
-  metadata: Record<string, unknown>;
+import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+
+export type AgentMessage = Anthropic.MessageParam;
+
+export type AgentContext = {
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly callSid?: string;
+  readonly messages: AgentMessage[];
+  readonly userProfile?: {
+    name: string;
+    timezone: string;
+    phone?: string;
+  };
+  readonly callMetadata?: {
+    toNumber: string;
+    fromNumber: string;
+    startedAt: string;
+  };
+};
+
+export type AgentResponse = {
+  readonly text: string;
+  readonly toolsUsed: string[];
+  readonly stopReason: "end_turn" | "max_tokens" | "tool_use";
+  readonly usage: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface ToolDefinition<TInput = any, TOutput = any> {
+  name: string;
+  description: string;
+  inputSchema: z.ZodTypeAny;
+  execute: (input: TInput) => Promise<TOutput>;
+  toClaudeToolDefinition(): ClaudeToolDef;
 }
 
-export interface AgentResult {
-  response: string;
-  toolsUsed: string[];
-  finishReason: "stop" | "tool_use" | "max_tokens";
-}
-
-export interface LLMProvider {
-  complete(params: LLMCompletionParams): Promise<LLMCompletionResult>;
-  streamComplete(params: LLMCompletionParams): AsyncIterable<LLMStreamChunk>;
-}
-
-export interface LLMCompletionParams {
-  systemPrompt: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  maxTokens?: number;
-}
-
-export interface LLMCompletionResult {
-  content: string;
-  finishReason: string;
-}
-
-export interface LLMStreamChunk {
-  delta: string;
-  finishReason?: string;
-}
+export type ClaudeToolDef = {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+};

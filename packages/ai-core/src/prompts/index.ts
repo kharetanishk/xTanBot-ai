@@ -1,1 +1,4 @@
-export const systemPrompts: Record<string, string> = {};
+export {
+  renderVoiceAgentSystemPrompt,
+  PROMPT_VERSION,
+} from "./system/voice-agent.v1";
