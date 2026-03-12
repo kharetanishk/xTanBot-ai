@@ -4,11 +4,24 @@ import { buildSystemPrompt } from "./prompt-builder";
 import { AgentError } from "./errors";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
+import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentContext, AgentResponse, AgentMessage } from "./types";
 
 const logger = createLogger("AgentKernel");
 
 const MAX_TOOL_ITERATIONS = 10;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new AgentError(`${label} timed out after ${ms}ms`)),
+        ms,
+      ),
+    ),
+  ]);
+}
 
 function extractTextFromResponse(
   content: Array<{ type: string; text?: string }>,
@@ -39,14 +52,18 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       );
     }
     iterations++;
-    const response = await anthropicClient.messages.create({
-      model: config.ANTHROPIC_MODEL,
-      system: buildSystemPrompt(ctx),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: toolRouter.getDefinitions() as any,
-      messages,
-      max_tokens: 1024,
-    });
+    const response = (await withTimeout(
+      anthropicClient.messages.create({
+        model: config.ANTHROPIC_MODEL,
+        system: buildSystemPrompt(ctx),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tools: toolRouter.getDefinitions() as any,
+        messages,
+        max_tokens: 1024,
+      }),
+      config.ANTHROPIC_TIMEOUT_MS,
+      "LLM call",
+    )) as Anthropic.Message;
 
     totalInputTokens += response.usage.input_tokens;
     totalOutputTokens += response.usage.output_tokens;
