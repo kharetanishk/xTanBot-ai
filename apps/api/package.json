@@ -2,25 +2,38 @@
   "name": "@xtanbot/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Fastify HTTP + WebSocket server for xTanBot.ai",
-  "main": "dist/index.js",
+  "main": "./dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.json",
+    "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fastify/cors": "^10.0.1",
-    "fastify": "^5.8.2",
-    "pino": "^10.3.1",
-    "zod": "^4.3.6"
+    "@fastify/cors": "^9.0.0",
+    "@fastify/helmet": "^11.0.0",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/rate-limit": "^9.0.0",
+    "@fastify/websocket": "^10.0.0",
+    "@xtanbot/config": "workspace:*",
+    "@xtanbot/db": "workspace:*",
+    "@xtanbot/events": "workspace:*",
+    "@xtanbot/logger": "workspace:*",
+    "@xtanbot/queues": "workspace:*",
+    "@xtanbot/redis": "workspace:*",
+    "@xtanbot/voice-pipeline": "workspace:*",
+    "@xtanbot/zod-schemas": "workspace:*",
+    "fastify": "^4.28.0",
+    "fastify-plugin": "^5.1.0",
+    "twilio": "^5.3.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.3",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@types/node": "^20.12.0",
+    "@types/ws": "^8.5.10",
+    "@xtanbot/tsconfig": "workspace:*",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.0"
   }
 }

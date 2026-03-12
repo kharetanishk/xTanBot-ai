@@ -2,23 +2,30 @@
   "name": "@xtanbot/worker",
   "version": "0.1.0",
   "private": true,
-  "description": "BullMQ job consumers for xTanBot.ai",
-  "main": "dist/index.js",
+  "main": "./dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.json",
+    "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
-    "bullmq": "^5.0.0",
-    "pino": "^10.3.1"
+    "@xtanbot/ai-core": "workspace:*",
+    "@xtanbot/config": "workspace:*",
+    "@xtanbot/db": "workspace:*",
+    "@xtanbot/events": "workspace:*",
+    "@xtanbot/logger": "workspace:*",
+    "@xtanbot/queues": "workspace:*",
+    "@xtanbot/redis": "workspace:*",
+    "@xtanbot/voice-pipeline": "workspace:*",
+    "@xtanbot/zod-schemas": "workspace:*",
+    "bullmq": "^5.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.3",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@xtanbot/tsconfig": "workspace:*",
+    "@types/node": "^20.12.0",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.0"
   }
 }
