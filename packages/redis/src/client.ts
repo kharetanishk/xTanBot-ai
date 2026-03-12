@@ -8,6 +8,19 @@ export const redisConnection = new IORedis(config.REDIS_URL, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   lazyConnect: false,
+  retryStrategy: (times: number): number | null => {
+    if (times > 5) {
+      logger.error({ attempts: times }, "Redis max reconnect attempts exceeded");
+      return null;
+    }
+    const delay = Math.min(times * 500, 2000);
+    logger.warn({ attempt: times, delayMs: delay }, "Redis reconnecting");
+    return delay;
+  },
+  reconnectOnError: (err: Error): boolean => {
+    const reconnectCodes = ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED"];
+    return reconnectCodes.some((code) => err.message.includes(code));
+  },
 });
 
 redisConnection.on("connect", () => {
