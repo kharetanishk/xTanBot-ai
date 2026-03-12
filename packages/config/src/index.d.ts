@@ -7,6 +7,7 @@ declare const EnvSchema: z.ZodObject<{
     REDIS_URL: z.ZodString;
     ANTHROPIC_API_KEY: z.ZodString;
     ANTHROPIC_MODEL: z.ZodDefault<z.ZodString>;
+    ANTHROPIC_TIMEOUT_MS: z.ZodDefault<z.ZodNumber>;
     ELEVENLABS_API_KEY: z.ZodString;
     ELEVENLABS_VOICE_ID: z.ZodString;
     ELEVENLABS_MODEL_ID: z.ZodDefault<z.ZodString>;
@@ -28,6 +29,7 @@ declare const EnvSchema: z.ZodObject<{
     REDIS_URL: string;
     ANTHROPIC_API_KEY: string;
     ANTHROPIC_MODEL: string;
+    ANTHROPIC_TIMEOUT_MS: number;
     ELEVENLABS_API_KEY: string;
     ELEVENLABS_VOICE_ID: string;
     ELEVENLABS_MODEL_ID: string;
@@ -56,6 +58,7 @@ declare const EnvSchema: z.ZodObject<{
     API_PORT?: number | undefined;
     API_HOST?: string | undefined;
     ANTHROPIC_MODEL?: string | undefined;
+    ANTHROPIC_TIMEOUT_MS?: number | undefined;
     ELEVENLABS_MODEL_ID?: string | undefined;
     JWT_EXPIRES_IN?: string | undefined;
     WORKER_CONCURRENCY?: number | undefined;
