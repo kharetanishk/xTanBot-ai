@@ -8,6 +8,8 @@ import type { AgentContext, AgentResponse, AgentMessage } from "./types";
 
 const logger = createLogger("AgentKernel");
 
+const MAX_TOOL_ITERATIONS = 10;
+
 function extractTextFromResponse(
   content: Array<{ type: string; text?: string }>,
 ): string {
@@ -28,8 +30,15 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
   const toolsUsed: string[] = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  let iterations = 0;
 
   while (true) {
+    if (iterations >= MAX_TOOL_ITERATIONS) {
+      throw new AgentError(
+        `Agent exceeded maximum tool iterations (${MAX_TOOL_ITERATIONS}). Possible reasoning loop.`,
+      );
+    }
+    iterations++;
     const response = await anthropicClient.messages.create({
       model: config.ANTHROPIC_MODEL,
       system: buildSystemPrompt(ctx),
@@ -51,6 +60,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
         {
           sessionId: ctx.sessionId,
           toolsUsed,
+          iterations,
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         },
