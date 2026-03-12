@@ -10,6 +10,14 @@ import type { AgentJob } from "@xtanbot/queues";
 
 const logger = createLogger("AgentWorker");
 
+const FALLBACK_PHRASES = [
+  "I'm sorry, I ran into an issue. Could you please repeat that?",
+  "Apologies, something went wrong on my end. Please try again.",
+  "I encountered a problem. Let's try that again — what did you need?",
+] as const;
+
+let fallbackPhraseIndex = 0;
+
 const connection = {
   host: new URL(config.REDIS_URL).hostname,
   port: parseInt(new URL(config.REDIS_URL).port || "6379"),
@@ -113,6 +121,26 @@ export function createAgentWorker(): Worker {
 
   worker.on("failed", (job, err) => {
     logger.error({ jobId: job?.id, err }, "Agent job failed");
+
+    const data = job?.data as AgentJob | undefined;
+    if (!data?.sessionId || !data?.userId) return;
+
+    const phrase: string =
+      FALLBACK_PHRASES[fallbackPhraseIndex % FALLBACK_PHRASES.length] ??
+      "I'm sorry, I ran into an issue. Could you please repeat that?";
+    fallbackPhraseIndex++;
+
+    emit.agentResponded({
+      sessionId: data.sessionId,
+      userId: data.userId,
+      text: phrase,
+      toolsUsed: [],
+      inputTokens: 0,
+      outputTokens: 0,
+      timestamp: new Date().toISOString(),
+    }).catch((emitErr) => {
+      logger.error({ emitErr }, "Failed to emit fallback TTS phrase");
+    });
   });
 
   worker.on("error", (err) => {
