@@ -53,6 +53,31 @@ async function bootstrap(): Promise<void> {
     { port: serverConfig.port, host: serverConfig.host },
     "API server started",
   );
+
+  const shutdown = async (signal: string, exitCode: number): Promise<void> => {
+    logger.info({ signal }, "Shutting down API server...");
+    try {
+      await app.close();
+      logger.info("API server shut down cleanly");
+    } catch (err) {
+      logger.error({ err }, "Error during API shutdown");
+    } finally {
+      process.exit(exitCode);
+    }
+  };
+
+  process.on("SIGTERM", () => void shutdown("SIGTERM", 0));
+  process.on("SIGINT",  () => void shutdown("SIGINT", 0));
+
+  process.on("uncaughtException", (err) => {
+    logger.error({ err }, "Uncaught exception");
+    void shutdown("uncaughtException", 1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    logger.error({ reason }, "Unhandled promise rejection");
+    void shutdown("unhandledRejection", 1);
+  });
 }
 
 bootstrap().catch((err) => {
