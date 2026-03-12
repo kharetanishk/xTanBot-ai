@@ -16,7 +16,13 @@ export type AgentJob = z.infer<typeof AgentJobSchema>;
 
 export async function enqueueAgentJob(data: AgentJob): Promise<void> {
   const validated = AgentJobSchema.parse(data);
-  await agentQueue.add(AGENT_JOB_NAME, validated);
+  await agentQueue.add(AGENT_JOB_NAME, validated, {
+    jobId: `agent:${validated.sessionId}`,
+    attempts: 3,
+    backoff: { type: "exponential", delay: 1000 },
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  });
   logger.info(
     { sessionId: data.sessionId, userId: data.userId },
     "Agent job enqueued",

@@ -21,7 +21,12 @@ export async function enqueueNotificationJob(
   data: NotificationJob,
 ): Promise<void> {
   const validated = NotificationJobSchema.parse(data);
-  await notificationQueue.add(NOTIFICATION_JOB_NAME, validated);
+  await notificationQueue.add(NOTIFICATION_JOB_NAME, validated, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  });
   logger.info(
     { userId: data.userId, type: data.type },
     "Notification job enqueued",

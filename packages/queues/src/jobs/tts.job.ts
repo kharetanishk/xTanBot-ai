@@ -15,6 +15,11 @@ export type TtsJob = z.infer<typeof TtsJobSchema>;
 
 export async function enqueueTtsJob(data: TtsJob): Promise<void> {
   const validated = TtsJobSchema.parse(data);
-  await ttsQueue.add(TTS_JOB_NAME, validated);
+  await ttsQueue.add(TTS_JOB_NAME, validated, {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 500 },
+    removeOnComplete: 50,
+    removeOnFail: 200,
+  });
   logger.info({ sessionId: data.sessionId }, "TTS job enqueued");
 }

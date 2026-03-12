@@ -5,6 +5,9 @@ import type { TranscriptResult } from "../types";
 
 const logger = createLogger("STTClient");
 
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BASE_DELAY_MS = 1000;
+
 export type TranscriptCallback = (result: TranscriptResult) => Promise<void>;
 
 export function createDeepgramConnection(onTranscript: TranscriptCallback) {
@@ -12,6 +15,8 @@ export function createDeepgramConnection(onTranscript: TranscriptCallback) {
     logger.warn("DEEPGRAM_API_KEY not set — STT disabled");
     return null;
   }
+
+  let reconnectAttempts = 0;
 
   const deepgram = createClient(config.DEEPGRAM_API_KEY);
 
@@ -27,6 +32,7 @@ export function createDeepgramConnection(onTranscript: TranscriptCallback) {
   });
 
   connection.on("open", () => {
+    reconnectAttempts = 0;
     logger.info("Deepgram connection opened");
   });
 
@@ -56,10 +62,34 @@ export function createDeepgramConnection(onTranscript: TranscriptCallback) {
 
   connection.on("error", (err: unknown) => {
     logger.error({ err }, "Deepgram connection error");
+
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttempts);
+      reconnectAttempts++;
+      logger.warn(
+        { attempt: reconnectAttempts, delayMs: delay },
+        "Deepgram error — scheduling reconnect",
+      );
+      setTimeout(() => createDeepgramConnection(onTranscript), delay);
+    } else {
+      logger.error("Deepgram max reconnect attempts exceeded after error");
+    }
   });
 
   connection.on("close", () => {
     logger.info("Deepgram connection closed");
+
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttempts);
+      reconnectAttempts++;
+      logger.warn(
+        { attempt: reconnectAttempts, delayMs: delay },
+        "Deepgram closed — scheduling reconnect",
+      );
+      setTimeout(() => createDeepgramConnection(onTranscript), delay);
+    } else {
+      logger.error("Deepgram max reconnect attempts exceeded after close");
+    }
   });
 
   return connection;
