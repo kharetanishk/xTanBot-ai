@@ -22,13 +22,16 @@ export function createDeepgramConnection(onTranscript: TranscriptCallback) {
 
   const connection = deepgram.listen.live({
     model: "nova-2",
+    // TODO: parameterise from user profile once Day 3 lookup is wired
     language: "en-US",
     smart_format: true,
     encoding: "mulaw",
     sample_rate: 8000,
     channels: 1,
-    endpointing: 300,
+    endpointing: 200,
     interim_results: true,
+    filler_words: false,
+    utterance_end_ms: 1000,
   });
 
   connection.on("open", () => {

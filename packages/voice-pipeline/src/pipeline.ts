@@ -3,6 +3,7 @@ import { setSession, getSession, deleteSession } from "@xtanbot/redis";
 import { enqueueAgentJob } from "@xtanbot/queues";
 import { emit } from "@xtanbot/events";
 import { config } from "@xtanbot/config";
+import { callRepository, userRepository } from "@xtanbot/db";
 import {
   createStreamHandler,
   buildTwilioAudioMessage,
@@ -18,12 +19,74 @@ import { randomUUID } from "crypto";
 
 const logger = createLogger("VoicePipeline");
 
+const FILLER_WORDS = [
+  "um", "uh", "hmm", "mhm", "mm",
+  "like", "you know", "i mean",
+  "okay", "ok", "yeah", "yes", "no",
+  "so", "well", "right",
+] as const;
+
+function stripFillerWords(transcript: string): string {
+  let result = transcript.toLowerCase().trim();
+  for (const filler of FILLER_WORDS) {
+    const pattern = new RegExp(
+      `\\b${filler.replace(" ", "\\s+")}\\b`,
+      "gi",
+    );
+    result = result.replace(pattern, "");
+  }
+  return result.replace(/\s+/g, " ").trim();
+}
+
 export type WebSocketSend = (data: string) => void;
 
 export function createPipeline(wsSend: WebSocketSend) {
   let deepgramConnection: ReturnType<typeof createDeepgramConnection> = null;
   let currentStreamSid: string | null = null;
   let currentSession: PipelineSession | null = null;
+  let isSpeaking = false;
+  let silenceTimer: NodeJS.Timeout | null = null;
+  let disconnectTimer: NodeJS.Timeout | null = null;
+  const SILENCE_PROMPT_MS = 8000;
+  const SILENCE_DISCONNECT_MS = 10000;
+  let lastTranscript = "";
+  const MIN_TRANSCRIPT_LENGTH = 3;
+
+  function resetSilenceTimer(): void {
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+    if (disconnectTimer) {
+      clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+    }
+    if (!currentSession) return;
+
+    silenceTimer = setTimeout(() => {
+      if (!currentSession || isSpeaking) return;
+      logger.warn(
+        { sessionId: currentSession.sessionId },
+        "Silence detected — prompting user",
+      );
+      void handleTTSResponse("Are you still there? I didn't catch anything.");
+
+      disconnectTimer = setTimeout(() => {
+        if (!currentSession) return;
+        logger.warn(
+          { sessionId: currentSession.sessionId },
+          "Silence timeout — terminating call",
+        );
+        void handleTTSResponse("I'll end the call now. Goodbye!")
+          .then(() =>
+            handleStop(currentSession!.callSid, currentSession!.streamSid),
+          )
+          .catch((err) =>
+            logger.error({ err }, "Error during silence disconnect"),
+          );
+      }, SILENCE_DISCONNECT_MS);
+    }, SILENCE_PROMPT_MS);
+  }
 
   async function handleTranscript(
     transcript: string,
@@ -31,32 +94,58 @@ export function createPipeline(wsSend: WebSocketSend) {
   ): Promise<void> {
     if (!isFinal || !currentSession) return;
 
+    const cleaned = stripFillerWords(transcript);
+
+    if (cleaned.length < MIN_TRANSCRIPT_LENGTH) {
+      logger.debug(
+        { transcript, cleaned },
+        "Transcript too short after cleaning — skipped",
+      );
+      return;
+    }
+
+    if (cleaned === lastTranscript) {
+      logger.debug(
+        { transcript: cleaned },
+        "Duplicate transcript — skipped",
+      );
+      return;
+    }
+
+    lastTranscript = cleaned;
+
     logger.info(
-      { transcript, sessionId: currentSession.sessionId },
+      { transcript: cleaned, sessionId: currentSession.sessionId },
       "Final transcript received — enqueuing agent job",
     );
 
     await enqueueAgentJob({
       sessionId: currentSession.sessionId,
       userId: currentSession.userId,
-      transcript,
+      transcript: cleaned,
       callSid: currentSession.callSid,
       conversationId: currentSession.conversationId,
     });
   }
 
   async function handleTTSResponse(text: string): Promise<void> {
-    if (!currentStreamSid) return;
+    isSpeaking = true;
+
+    if (!currentStreamSid) {
+      isSpeaking = false;
+      return;
+    }
 
     logger.debug({ textLength: text.length }, "Streaming TTS to Twilio");
 
     wsSend(buildTwilioClearMessage(currentStreamSid));
 
     await streamTextToSpeech(text, async (audioBase64) => {
-      if (currentStreamSid) {
-        wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
-      }
+      if (!isSpeaking || !currentStreamSid) return;
+      wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
     });
+
+    isSpeaking = false;
   }
 
   const streamHandler = createStreamHandler({
@@ -66,8 +155,27 @@ export function createPipeline(wsSend: WebSocketSend) {
       const sessionId = randomUUID();
       const conversationId = randomUUID();
 
-      // TODO Day 3: look up userId from callSid via callRepository
-      const userId = randomUUID(); // placeholder
+      let userId: string;
+      let userName: string | undefined;
+      let userTimezone = "UTC";
+
+      try {
+        const callRecord = await callRepository.findByCallSid(callSid);
+        if (callRecord) {
+          userId = callRecord.userId;
+          const userRecord = await userRepository.findById(userId);
+          if (userRecord) {
+            userName = userRecord.name;
+            userTimezone = userRecord.timezone;
+          }
+        } else {
+          logger.warn({ callSid }, "Call record not found — using fallback userId");
+          userId = callSid;
+        }
+      } catch (err) {
+        logger.error({ err, callSid }, "Failed to look up user for call — using fallback");
+        userId = callSid;
+      }
 
       const session: PipelineSession = {
         sessionId,
@@ -102,19 +210,29 @@ export function createPipeline(wsSend: WebSocketSend) {
         timestamp: new Date().toISOString(),
       });
 
-      logger.info({ sessionId, callSid }, "Pipeline session started");
+      logger.info({ sessionId, callSid, userId, userName, userTimezone }, "Pipeline session started");
 
       deepgramConnection = createDeepgramConnection(async (result) => {
         await handleTranscript(result.transcript, result.isFinal);
       });
 
-      // Send greeting
-      await handleTTSResponse(
-        "Hello! I'm xTanBot, your AI assistant. How can I help you today?",
-      );
+      const greeting = userName
+        ? `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`
+        : "Hello! I'm xTanBot, your AI assistant. How can I help you today?";
+      await handleTTSResponse(greeting);
+      resetSilenceTimer();
     },
 
     async onAudioChunk(chunk) {
+      if (isSpeaking && currentStreamSid) {
+        isSpeaking = false;
+        wsSend(buildTwilioClearMessage(currentStreamSid));
+        logger.info(
+          { sessionId: currentSession?.sessionId },
+          "Barge-in detected — interrupting AI speech",
+        );
+      }
+
       if (!currentSession) return;
 
       const sessionAge =
@@ -130,6 +248,7 @@ export function createPipeline(wsSend: WebSocketSend) {
       }
 
       sendAudioToDeepgram(deepgramConnection, chunk.payload);
+      resetSilenceTimer();
     },
 
     async onStop(callSid, streamSid) {
@@ -138,6 +257,16 @@ export function createPipeline(wsSend: WebSocketSend) {
   });
 
   async function handleStop(callSid: string, streamSid: string): Promise<void> {
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+    if (disconnectTimer) {
+      clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+    }
+    lastTranscript = "";
+
     logger.info({ callSid, streamSid }, "Pipeline session ending");
 
     if (currentSession) {

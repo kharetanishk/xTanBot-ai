@@ -5,6 +5,7 @@
     "rootDir": "src",
     "paths": {
       "@xtanbot/config": ["../config/dist/index.d.ts"],
+      "@xtanbot/db": ["../db/dist/index.d.ts"],
       "@xtanbot/logger": ["../logger/dist/index.d.ts"],
       "@xtanbot/redis": ["../redis/dist/index.d.ts"],
       "@xtanbot/queues": ["../queues/dist/index.d.ts"],

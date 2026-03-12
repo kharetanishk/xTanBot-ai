@@ -19,6 +19,7 @@
   "dependencies": {
     "@deepgram/sdk": "^3.5.0",
     "@xtanbot/config": "workspace:*",
+    "@xtanbot/db": "workspace:*",
     "@xtanbot/events": "workspace:*",
     "@xtanbot/logger": "workspace:*",
     "@xtanbot/queues": "workspace:*",

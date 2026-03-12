@@ -24,6 +24,30 @@ const connection = {
   password: new URL(config.REDIS_URL).password || undefined,
 };
 
+const AGENT_HISTORY_WINDOW = 10; // max user/assistant pairs
+
+type SessionMessage = {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+};
+
+function trimHistory(messages: SessionMessage[]): SessionMessage[] {
+  const maxMessages = AGENT_HISTORY_WINDOW * 2;
+  if (messages.length <= maxMessages) return messages;
+
+  const trimmed = messages.slice(messages.length - maxMessages);
+  logger.debug(
+    {
+      originalCount: messages.length,
+      trimmedCount: trimmed.length,
+      window: AGENT_HISTORY_WINDOW,
+    },
+    "Conversation history trimmed for LLM context",
+  );
+  return trimmed;
+}
+
 async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   const { sessionId, userId, transcript, callSid, conversationId } = job.data;
 
@@ -50,7 +74,7 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     sessionId,
     userId,
     callSid,
-    messages: updatedMessages.map((m) => ({
+    messages: trimHistory(updatedMessages).map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     })),
