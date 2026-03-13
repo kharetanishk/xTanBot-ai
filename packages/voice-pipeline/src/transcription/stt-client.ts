@@ -10,7 +10,10 @@ const RECONNECT_BASE_DELAY_MS = 1000;
 
 export type TranscriptCallback = (result: TranscriptResult) => Promise<void>;
 
-export function createDeepgramConnection(onTranscript: TranscriptCallback) {
+export function createDeepgramConnection(
+  onTranscript: TranscriptCallback,
+  onReconnect?: (conn: ReturnType<typeof createDeepgramConnection>) => void,
+) {
   if (!config.DEEPGRAM_API_KEY) {
     logger.warn("DEEPGRAM_API_KEY not set — STT disabled");
     return null;
@@ -73,7 +76,10 @@ export function createDeepgramConnection(onTranscript: TranscriptCallback) {
         { attempt: reconnectAttempts, delayMs: delay },
         "Deepgram error — scheduling reconnect",
       );
-      setTimeout(() => createDeepgramConnection(onTranscript), delay);
+      setTimeout(() => {
+        const newConn = createDeepgramConnection(onTranscript, onReconnect);
+        onReconnect?.(newConn);
+      }, delay);
     } else {
       logger.error("Deepgram max reconnect attempts exceeded after error");
     }
@@ -89,7 +95,10 @@ export function createDeepgramConnection(onTranscript: TranscriptCallback) {
         { attempt: reconnectAttempts, delayMs: delay },
         "Deepgram closed — scheduling reconnect",
       );
-      setTimeout(() => createDeepgramConnection(onTranscript), delay);
+      setTimeout(() => {
+        const newConn = createDeepgramConnection(onTranscript, onReconnect);
+        onReconnect?.(newConn);
+      }, delay);
     } else {
       logger.error("Deepgram max reconnect attempts exceeded after close");
     }

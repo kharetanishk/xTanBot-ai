@@ -13,7 +13,7 @@ export const redisConnection = new IORedis(config.REDIS_URL, {
       logger.error({ attempts: times }, "Redis max reconnect attempts exceeded");
       return null;
     }
-    const delay = Math.min(times * 500, 2000);
+    const delay = Math.min(Math.pow(2, times - 1) * 500, 2000);
     logger.warn({ attempt: times, delayMs: delay }, "Redis reconnecting");
     return delay;
   },

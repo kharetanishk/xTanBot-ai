@@ -228,9 +228,18 @@ export function createPipeline(wsSend: WebSocketSend) {
 
       logger.info({ sessionId, callSid, userId, userName, userTimezone }, "Pipeline session started");
 
-      deepgramConnection = createDeepgramConnection(async (result) => {
-        await handleTranscript(result.transcript, result.isFinal);
-      });
+      deepgramConnection = createDeepgramConnection(
+        async (result) => {
+          await handleTranscript(result.transcript, result.isFinal);
+        },
+        (newConn) => {
+          deepgramConnection = newConn;
+          logger.info(
+            { sessionId: currentSession?.sessionId },
+            "Deepgram connection reference updated after reconnect",
+          );
+        },
+      );
 
       const greeting = userName
         ? `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`

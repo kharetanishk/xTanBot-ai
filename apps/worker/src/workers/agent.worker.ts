@@ -26,14 +26,6 @@ const agentCostUsd = counter(
   "Cumulative Claude API cost in USD across all sessions",
 );
 
-const FALLBACK_PHRASES = [
-  "I'm sorry, I ran into an issue. Could you please repeat that?",
-  "Apologies, something went wrong on my end. Please try again.",
-  "I encountered a problem. Let's try that again — what did you need?",
-] as const;
-
-let fallbackPhraseIndex = 0;
-
 const FALLBACK_BY_CATEGORY: Record<string, string> = {
   timeout:
     "I lost my connection briefly. Could you please repeat that?",

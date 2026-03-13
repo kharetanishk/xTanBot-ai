@@ -1,3 +1,6 @@
+// TODO Day 5: Add contact domain events (contactCreated,
+// contactUpdated, contactDeleted) to @xtanbot/events
+// and emit them here following the meeting.service pattern.
 import { contactRepository } from "@xtanbot/db";
 import { createLogger } from "@xtanbot/logger";
 import type { CreateContact, UpdateContact } from "@xtanbot/zod-schemas";

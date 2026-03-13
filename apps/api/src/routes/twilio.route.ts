@@ -46,7 +46,7 @@ export async function twilioRoutes(app: FastifyInstance): Promise<void> {
   // POST /twilio/voice — Twilio calls this when a call comes in
   app.post(
     "/twilio/voice",
-    { config: { rawBody: true } },
+    { config: { rawBody: true, rateLimit: { max: 300 } } },
     async (request, reply) => {
       if (!guardTwilioSignature(request, reply)) {
         return reply.status(403).send({ error: "Forbidden" });
@@ -63,28 +63,32 @@ export async function twilioRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // POST /twilio/status — Twilio calls this on call status changes
-  app.post("/twilio/status", async (request, reply) => {
-    if (!guardTwilioSignature(request, reply)) {
-      return reply.status(403).send({ error: "Forbidden" });
-    }
+  app.post(
+    "/twilio/status",
+    { config: { rateLimit: { max: 300 } } },
+    async (request, reply) => {
+      if (!guardTwilioSignature(request, reply)) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
 
-    const body = request.body as Record<string, string>;
-    const {
-      CallSid = "",
-      CallStatus = "",
-      CallDuration,
-    } = body as Record<string, string>;
+      const body = request.body as Record<string, string>;
+      const {
+        CallSid = "",
+        CallStatus = "",
+        CallDuration,
+      } = body as Record<string, string>;
 
-    logger.info({ CallSid, CallStatus }, "Call status update");
+      logger.info({ CallSid, CallStatus }, "Call status update");
 
-    await callService.updateCallStatus(
-      CallSid,
-      CallStatus,
-      CallDuration ? parseInt(CallDuration) : undefined,
-    );
+      await callService.updateCallStatus(
+        CallSid,
+        CallStatus,
+        CallDuration ? parseInt(CallDuration) : undefined,
+      );
 
-    return reply.status(204).send();
-  });
+      return reply.status(204).send();
+    },
+  );
 
   // WS /twilio/stream — Twilio media stream WebSocket
   app.get("/twilio/stream", { websocket: true }, (socket: WebSocket) => {
