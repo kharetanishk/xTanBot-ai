@@ -57,6 +57,13 @@ const EnvSchema = z.object({
 
   // ─── Queue ──────────────────────────────────────
   MAX_AGENT_QUEUE_DEPTH: z.coerce.number().default(100),
+
+  // ─── Monitoring ──────────────────────────────────
+  SENTRY_DSN: z.string().optional().default(""),
+
+  // ─── Bull Board ──────────────────────────────────
+  BULL_BOARD_USERNAME: z.string().default("admin"),
+  BULL_BOARD_PASSWORD: z.string().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

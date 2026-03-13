@@ -11,12 +11,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@sentry/node": "^10.43.0",
     "@xtanbot/ai-core": "workspace:*",
-    "@xtanbot/observability": "workspace:*",
     "@xtanbot/config": "workspace:*",
     "@xtanbot/db": "workspace:*",
     "@xtanbot/events": "workspace:*",
     "@xtanbot/logger": "workspace:*",
+    "@xtanbot/observability": "workspace:*",
     "@xtanbot/queues": "workspace:*",
     "@xtanbot/redis": "workspace:*",
     "@xtanbot/voice-pipeline": "workspace:*",
@@ -24,8 +25,8 @@
     "bullmq": "^5.0.0"
   },
   "devDependencies": {
-    "@xtanbot/tsconfig": "workspace:*",
     "@types/node": "^20.12.0",
+    "@xtanbot/tsconfig": "workspace:*",
     "tsx": "^4.11.0",
     "typescript": "^5.4.0"
   }

@@ -1,10 +1,23 @@
+import * as Sentry from "@sentry/node";
 import { createLogger } from "@xtanbot/logger";
+import { config } from "@xtanbot/config";
 import { createAgentWorker } from "./workers/agent.worker";
 import { createNotificationWorker } from "./workers/notification.worker";
 
 const logger = createLogger("Worker");
 
 async function bootstrap(): Promise<void> {
+  if (config.SENTRY_DSN) {
+    Sentry.init({
+      dsn: config.SENTRY_DSN,
+      environment: config.NODE_ENV,
+      tracesSampleRate: 0.1,
+    });
+    logger.info("Sentry initialised for Worker");
+  } else {
+    logger.info("Sentry DSN not set — error monitoring disabled");
+  }
+
   logger.info("Starting xTanBot workers...");
 
   const agentWorker = createAgentWorker();
@@ -21,6 +34,22 @@ async function bootstrap(): Promise<void> {
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
+
+  process.on("uncaughtException", (err) => {
+    logger.error({ err }, "Uncaught exception in worker");
+    if (config.SENTRY_DSN) Sentry.captureException(err);
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    logger.error({ reason }, "Unhandled rejection in worker");
+    if (config.SENTRY_DSN) {
+      Sentry.captureException(
+        reason instanceof Error ? reason : new Error(String(reason)),
+      );
+    }
+    process.exit(1);
+  });
 
   logger.info("All workers running. Waiting for jobs...");
 }

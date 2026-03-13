@@ -116,19 +116,25 @@ function trimHistory(messages: SessionMessage[]): SessionMessage[] {
 async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   const { sessionId, userId, transcript, callSid, conversationId } = job.data;
 
-  logger.info({ sessionId, jobId: job.id }, "Processing agent job");
+  const log = logger.child({
+    sessionId,
+    userId,
+    jobId: job.id ?? "unknown",
+  });
+
+  log.info("Processing agent job");
 
   try {
     const waitMs = job.processedOn ? job.processedOn - job.timestamp : 0;
     queueWaitMs.observe(waitMs);
   } catch (err) {
-    logger.error({ err }, "Failed to record queue_wait_ms metric");
+    log.error({ err }, "Failed to record queue_wait_ms metric");
   }
 
   // 1. Load session from Redis
   const session = await getSession(sessionId);
   if (!session) {
-    logger.warn({ sessionId }, "Session not found — job skipped");
+    log.warn("Session not found — job skipped");
     return;
   }
 
@@ -139,9 +145,8 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     const currentCostUSD = parseFloat(currentCostStr ?? "0");
 
     if (currentCostUSD >= config.MAX_COST_PER_SESSION_USD) {
-      logger.warn(
+      log.warn(
         {
-          sessionId,
           currentCostUSD: parseFloat(currentCostUSD.toFixed(6)),
           capUSD: config.MAX_COST_PER_SESSION_USD,
         },
@@ -161,8 +166,8 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
       return;
     }
   } catch (err) {
-    logger.error(
-      { err, sessionId },
+    log.error(
+      { err },
       "Failed to read session cost from Redis — proceeding without cap check",
     );
   }
@@ -171,9 +176,8 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   const sanitised = sanitiseTranscript(transcript);
 
   if (sanitised !== transcript) {
-    logger.warn(
+    log.warn(
       {
-        sessionId,
         originalLength: transcript.length,
         sanitisedLength: sanitised.length,
       },
@@ -203,7 +207,7 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   try {
     agentResponseMs.observe(Date.now() - agentStart);
   } catch (err) {
-    logger.error({ err }, "Failed to record agent_response_ms metric");
+    log.error({ err }, "Failed to record agent_response_ms metric");
   }
 
   // 4. Add assistant response to history
@@ -248,9 +252,8 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     timestamp: new Date().toISOString(),
   });
 
-  logger.info(
+  log.info(
     {
-      sessionId,
       toolsUsed: agentResponse.toolsUsed,
       inputTokens: agentResponse.usage.inputTokens,
       outputTokens: agentResponse.usage.outputTokens,
@@ -263,9 +266,8 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     agentResponse.usage.inputTokens  * COST_PER_INPUT_TOKEN_USD +
     agentResponse.usage.outputTokens * COST_PER_OUTPUT_TOKEN_USD;
 
-  logger.info(
+  log.info(
     {
-      sessionId,
       inputTokens: agentResponse.usage.inputTokens,
       outputTokens: agentResponse.usage.outputTokens,
       turnCostUSD: parseFloat(turnCostUSD.toFixed(6)),
@@ -276,7 +278,7 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   try {
     agentCostUsd.inc(turnCostUSD);
   } catch (err) {
-    logger.error({ err }, "Failed to record agent_cost_usd metric");
+    log.error({ err }, "Failed to record agent_cost_usd metric");
   }
 
   try {
@@ -287,15 +289,14 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     const sessionTotalStr = await redisConnection.get(costKey);
     const sessionTotalUSD = parseFloat(sessionTotalStr ?? "0");
 
-    logger.info(
+    log.info(
       {
-        sessionId,
         sessionTotalUSD: parseFloat(sessionTotalUSD.toFixed(6)),
       },
       "Session cumulative cost",
     );
   } catch (err) {
-    logger.error({ err, sessionId }, "Failed to track session cost in Redis");
+    log.error({ err }, "Failed to track session cost in Redis");
   }
 }
 
