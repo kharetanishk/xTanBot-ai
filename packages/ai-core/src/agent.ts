@@ -38,6 +38,44 @@ function categoriseApiError(err: unknown): AgentErrorCategory {
   return "unknown";
 }
 
+const SIMPLE_PATTERNS: RegExp[] = [
+  /^(yes|no|yeah|nope|sure|okay|ok|correct|right|confirmed?)\.?$/i,
+  /what(\s+is|\s*'s)?\s+the\s+time/i,
+  /what\s+time\s+is\s+it/i,
+  /cancel\s+(that|it|the\s+\w+)/i,
+  /^(go\s+ahead|do\s+it|proceed|confirm(ed)?|sounds?\s+good)\.?$/i,
+  /^(never\s+mind|forget\s+it|stop|don'?t)\.?$/i,
+  /^(thank\s*you|thanks|cheers|great|perfect|awesome)\.?$/i,
+];
+
+function selectModel(messages: Anthropic.MessageParam[]): string {
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find((m) => m.role === "user");
+
+  if (!lastUserMessage) return config.ANTHROPIC_MODEL;
+
+  const content =
+    typeof lastUserMessage.content === "string"
+      ? lastUserMessage.content
+      : "";
+
+  const isSimple = SIMPLE_PATTERNS.some((p) => p.test(content.trim()));
+  return isSimple
+    ? config.ANTHROPIC_HAIKU_MODEL
+    : config.ANTHROPIC_MODEL;
+}
+
+const MAX_VOICE_SENTENCES = 3;
+
+function truncateForVoice(text: string): string {
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => s.trim().length > 0);
+  if (sentences.length <= MAX_VOICE_SENTENCES) return text;
+  return sentences.slice(0, MAX_VOICE_SENTENCES).join(" ").trim();
+}
+
 function extractTextFromResponse(
   content: Array<{ type: string; text?: string }>,
 ): string {
@@ -60,6 +98,16 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
   let totalOutputTokens = 0;
   let iterations = 0;
 
+  const selectedModel = selectModel(ctx.messages);
+  logger.debug(
+    {
+      sessionId: ctx.sessionId,
+      selectedModel,
+      messageCount: ctx.messages.length,
+    },
+    "Model selected for agent turn",
+  );
+
   while (true) {
     if (iterations >= MAX_TOOL_ITERATIONS) {
       throw new AgentError(
@@ -72,7 +120,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
     try {
       response = (await withTimeout(
         anthropicClient.messages.create({
-          model: config.ANTHROPIC_MODEL,
+          model: selectedModel,
           system: buildSystemPrompt(ctx),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tools: toolRouter.getDefinitions() as any,
@@ -100,6 +148,19 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
         response.content as Array<{ type: string; text?: string }>,
       );
 
+      const truncatedText = truncateForVoice(text);
+
+      if (truncatedText !== text) {
+        logger.info(
+          {
+            sessionId: ctx.sessionId,
+            originalLength: text.length,
+            truncatedLength: truncatedText.length,
+          },
+          "Voice response truncated to sentence limit",
+        );
+      }
+
       logger.info(
         {
           sessionId: ctx.sessionId,
@@ -112,7 +173,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       );
 
       return {
-        text,
+        text: truncatedText,
         toolsUsed,
         stopReason: "end_turn",
         usage: {

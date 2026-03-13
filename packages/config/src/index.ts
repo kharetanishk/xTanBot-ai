@@ -25,6 +25,7 @@ const EnvSchema = z.object({
   ANTHROPIC_MODEL: z.string().default("claude-opus-4-5"),
   ANTHROPIC_TIMEOUT_MS: z.coerce.number().default(15000),
   ANTHROPIC_MAX_TOKENS: z.coerce.number().default(512),
+  ANTHROPIC_HAIKU_MODEL: z.string().default("claude-haiku-4-5-20251001"),
 
   // ─── ElevenLabs ───────────────────────────────────
   ELEVENLABS_API_KEY: z.string().min(1, "ELEVENLABS_API_KEY is required"),
@@ -50,6 +51,12 @@ const EnvSchema = z.object({
   RATE_LIMIT_CALLS_PER_HOUR: z.coerce.number().default(20),
   RATE_LIMIT_AI_RPM: z.coerce.number().default(60),
   VOICE_SESSION_MAX_DURATION_S: z.coerce.number().default(1800),
+
+  // ─── Cost Control ───────────────────────────────
+  MAX_COST_PER_SESSION_USD: z.coerce.number().default(0.50),
+
+  // ─── Queue ──────────────────────────────────────
+  MAX_AGENT_QUEUE_DEPTH: z.coerce.number().default(100),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

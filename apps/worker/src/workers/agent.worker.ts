@@ -1,7 +1,7 @@
 import { Worker, type Job } from "bullmq";
 import { AGENT_QUEUE_NAME } from "@xtanbot/queues";
 import { runAgent } from "@xtanbot/ai-core";
-import { getSession, setSession } from "@xtanbot/redis";
+import { getSession, setSession, redisConnection } from "@xtanbot/redis";
 import { conversationRepository } from "@xtanbot/db";
 import { emit } from "@xtanbot/events";
 import { createLogger } from "@xtanbot/logger";
@@ -38,6 +38,9 @@ const connection = {
   port: parseInt(new URL(config.REDIS_URL).port || "6379"),
   password: new URL(config.REDIS_URL).password || undefined,
 };
+
+const COST_PER_INPUT_TOKEN_USD  = 0.000003;  // $3.00 / 1M tokens
+const COST_PER_OUTPUT_TOKEN_USD = 0.000015;  // $15.00 / 1M tokens
 
 const AGENT_HISTORY_WINDOW = 10; // max user/assistant pairs
 
@@ -106,7 +109,42 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     return;
   }
 
-  // 2. Add user message to conversation history
+  // 2. Per-session cost cap check
+  try {
+    const costKey = `cost:session:${sessionId}`;
+    const currentCostStr = await redisConnection.get(costKey);
+    const currentCostUSD = parseFloat(currentCostStr ?? "0");
+
+    if (currentCostUSD >= config.MAX_COST_PER_SESSION_USD) {
+      logger.warn(
+        {
+          sessionId,
+          currentCostUSD: parseFloat(currentCostUSD.toFixed(6)),
+          capUSD: config.MAX_COST_PER_SESSION_USD,
+        },
+        "Session cost cap exceeded — terminating session",
+      );
+
+      await emit.agentResponded({
+        sessionId,
+        userId,
+        text: "This call has reached its usage limit. Please call back to continue. Goodbye!",
+        toolsUsed: [],
+        inputTokens: 0,
+        outputTokens: 0,
+        timestamp: new Date().toISOString(),
+      });
+
+      return;
+    }
+  } catch (err) {
+    logger.error(
+      { err, sessionId },
+      "Failed to read session cost from Redis — proceeding without cap check",
+    );
+  }
+
+  // 3. Add user message to conversation history
   const sanitised = sanitiseTranscript(transcript);
 
   if (sanitised !== transcript) {
@@ -190,6 +228,40 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     },
     "Agent job completed",
   );
+
+  // 8. Cost tracking
+  const turnCostUSD =
+    agentResponse.usage.inputTokens  * COST_PER_INPUT_TOKEN_USD +
+    agentResponse.usage.outputTokens * COST_PER_OUTPUT_TOKEN_USD;
+
+  logger.info(
+    {
+      sessionId,
+      inputTokens: agentResponse.usage.inputTokens,
+      outputTokens: agentResponse.usage.outputTokens,
+      turnCostUSD: parseFloat(turnCostUSD.toFixed(6)),
+    },
+    "Agent turn cost",
+  );
+
+  try {
+    const costKey = `cost:session:${sessionId}`;
+    await redisConnection.incrbyfloat(costKey, turnCostUSD);
+    await redisConnection.expire(costKey, 3600);
+
+    const sessionTotalStr = await redisConnection.get(costKey);
+    const sessionTotalUSD = parseFloat(sessionTotalStr ?? "0");
+
+    logger.info(
+      {
+        sessionId,
+        sessionTotalUSD: parseFloat(sessionTotalUSD.toFixed(6)),
+      },
+      "Session cumulative cost",
+    );
+  } catch (err) {
+    logger.error({ err, sessionId }, "Failed to track session cost in Redis");
+  }
 }
 
 export function createAgentWorker(): Worker {

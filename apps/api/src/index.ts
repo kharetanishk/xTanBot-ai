@@ -67,7 +67,7 @@ async function bootstrap(): Promise<void> {
   };
 
   process.on("SIGTERM", () => void shutdown("SIGTERM", 0));
-  process.on("SIGINT",  () => void shutdown("SIGINT", 0));
+  process.on("SIGINT", () => void shutdown("SIGINT", 0));
 
   process.on("uncaughtException", (err) => {
     logger.error({ err }, "Uncaught exception");

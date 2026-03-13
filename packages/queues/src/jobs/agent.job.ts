@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { agentQueue, AGENT_JOB_NAME } from "../queues/agent.queue";
 import { createLogger } from "@xtanbot/logger";
+import { config } from "@xtanbot/config";
 
 const logger = createLogger("AgentJob");
 
@@ -16,6 +17,27 @@ export type AgentJob = z.infer<typeof AgentJobSchema>;
 
 export async function enqueueAgentJob(data: AgentJob): Promise<void> {
   const validated = AgentJobSchema.parse(data);
+
+  try {
+    const waitingCount = await agentQueue.getWaitingCount();
+    if (waitingCount >= config.MAX_AGENT_QUEUE_DEPTH) {
+      logger.warn(
+        {
+          waitingCount,
+          maxDepth: config.MAX_AGENT_QUEUE_DEPTH,
+          sessionId: validated.sessionId,
+        },
+        "Agent queue depth exceeded — job not enqueued",
+      );
+      return;
+    }
+  } catch (err) {
+    logger.error(
+      { err },
+      "Failed to check agent queue depth — proceeding with enqueue",
+    );
+  }
+
   await agentQueue.add(AGENT_JOB_NAME, validated, {
     jobId: `agent:${validated.sessionId}`,
     attempts: 3,
