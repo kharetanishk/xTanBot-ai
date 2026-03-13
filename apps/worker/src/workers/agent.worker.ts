@@ -18,6 +18,21 @@ const FALLBACK_PHRASES = [
 
 let fallbackPhraseIndex = 0;
 
+const FALLBACK_BY_CATEGORY: Record<string, string> = {
+  timeout:
+    "I lost my connection briefly. Could you please repeat that?",
+  rate_limit:
+    "I'm a little busy right now. Please try again in a moment.",
+  content_policy:
+    "I'm not able to help with that. Is there something else I can do for you?",
+  network:
+    "I'm having trouble connecting. Please try again shortly.",
+  iteration_limit:
+    "That request was a bit complex for me. Could you rephrase it?",
+  unknown:
+    "I'm sorry, I ran into an issue. Could you please repeat that?",
+};
+
 const connection = {
   host: new URL(config.REDIS_URL).hostname,
   port: parseInt(new URL(config.REDIS_URL).port || "6379"),
@@ -25,6 +40,37 @@ const connection = {
 };
 
 const AGENT_HISTORY_WINDOW = 10; // max user/assistant pairs
+
+const MAX_TRANSCRIPT_LENGTH = 500;
+
+const INJECTION_PATTERNS: RegExp[] = [
+  /ignore\s+(previous|prior|all)\s+instructions?/gi,
+  /system\s*:/gi,
+  /assistant\s*:/gi,
+  /user\s*:/gi,
+  /<\s*\/?\s*(tool|function|system|prompt|instruction)[^>]*>/gi,
+  /\[INST\]|\[\/INST\]|<<SYS>>|<\/SYS>/gi,
+];
+
+function sanitiseTranscript(transcript: string): string {
+  let result = transcript;
+
+  // Strip XML/JSON control characters
+  result = result.replace(/[<>{}[\]\\]/g, "");
+
+  // Strip prompt injection patterns
+  for (const pattern of INJECTION_PATTERNS) {
+    result = result.replace(pattern, "");
+  }
+
+  // Normalise whitespace left by stripping
+  result = result.replace(/\s+/g, " ").trim();
+
+  // Hard cap length
+  result = result.slice(0, MAX_TRANSCRIPT_LENGTH);
+
+  return result;
+}
 
 type SessionMessage = {
   role: "user" | "assistant";
@@ -61,9 +107,22 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   }
 
   // 2. Add user message to conversation history
+  const sanitised = sanitiseTranscript(transcript);
+
+  if (sanitised !== transcript) {
+    logger.warn(
+      {
+        sessionId,
+        originalLength: transcript.length,
+        sanitisedLength: sanitised.length,
+      },
+      "Transcript modified by sanitisation — possible injection attempt",
+    );
+  }
+
   const userMessage = {
     role: "user" as const,
-    content: transcript,
+    content: sanitised,
     timestamp: new Date().toISOString(),
   };
 
@@ -100,7 +159,7 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   await conversationRepository.addMessage({
     conversationId,
     role: "user",
-    content: transcript,
+    content: sanitised,
     toolsUsed: [],
   });
 
@@ -149,10 +208,19 @@ export function createAgentWorker(): Worker {
     const data = job?.data as AgentJob | undefined;
     if (!data?.sessionId || !data?.userId) return;
 
+    const category =
+      err instanceof Error && "category" in err
+        ? (err as { category: string }).category
+        : "unknown";
+
     const phrase: string =
-      FALLBACK_PHRASES[fallbackPhraseIndex % FALLBACK_PHRASES.length] ??
-      "I'm sorry, I ran into an issue. Could you please repeat that?";
-    fallbackPhraseIndex++;
+      FALLBACK_BY_CATEGORY[category] ??
+      FALLBACK_BY_CATEGORY["unknown"]!;
+
+    logger.info(
+      { category, jobId: job?.id },
+      "Selecting fallback phrase by error category",
+    );
 
     emit.agentResponded({
       sessionId: data.sessionId,

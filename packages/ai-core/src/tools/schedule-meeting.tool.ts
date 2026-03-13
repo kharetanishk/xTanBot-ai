@@ -26,6 +26,7 @@ export const scheduleMeetingTool: ToolDefinition<Input, Output> = {
   name: "schedule_meeting",
   description:
     "Schedule a new meeting with specified attendees at a given time. Use this when the user wants to create, book, or schedule a meeting or appointment.",
+  requiresConfirmation: true,
 
   inputSchema,
 

@@ -30,10 +30,17 @@ export type AgentResponse = {
   };
 };
 
+export type ConfirmationRequired = {
+  requiresConfirmation: true;
+  toolName: string;
+  message: string;
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface ToolDefinition<TInput = any, TOutput = any> {
   name: string;
   description: string;
+  requiresConfirmation: boolean;
   inputSchema: z.ZodTypeAny;
   execute: (input: TInput) => Promise<TOutput>;
   toClaudeToolDefinition(): ClaudeToolDef;

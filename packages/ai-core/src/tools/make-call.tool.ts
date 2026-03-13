@@ -7,7 +7,10 @@ const logger = createLogger("MakeCallTool");
 const inputSchema = z.object({
   toNumber: z
     .string()
-    .regex(/^\+[1-9]\d{1,14}$/, "Must be E.164 format e.g. +1234567890"),
+    .regex(
+      /^\+[1-9]\d{1,14}$/,
+      "Phone number must be in international format, e.g. +919876543210 or +12125551234",
+    ),
   userId: z.string().uuid(),
   reason: z.string().optional(),
 });
@@ -20,10 +23,13 @@ type Output = {
   message: string;
 };
 
+export const makeCallInputSchema = inputSchema;
+
 export const makeCallTool: ToolDefinition<Input, Output> = {
   name: "make_call",
   description:
     "Initiate a phone call to a specified number on behalf of the user. Use this when the user explicitly asks to call someone or a phone number.",
+  requiresConfirmation: true,
 
   inputSchema,
 

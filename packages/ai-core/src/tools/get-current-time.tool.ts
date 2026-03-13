@@ -20,6 +20,7 @@ export const getCurrentTimeTool: ToolDefinition<Input, Output> = {
   name: "get_current_time",
   description:
     "Get the current date and time in a specified timezone. Use this when the user asks about the current time or when you need to know the current time to schedule something.",
+  requiresConfirmation: false,
 
   inputSchema,
 

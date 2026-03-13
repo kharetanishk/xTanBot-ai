@@ -27,6 +27,7 @@ export const lookupContactTool: ToolDefinition<Input, Output> = {
   name: "lookup_contact",
   description:
     "Search for a contact by name, email, or phone number. Use this when the user refers to a person by name or asks to find someone's contact information.",
+  requiresConfirmation: false,
 
   inputSchema,
 

@@ -24,6 +24,7 @@ const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
   ANTHROPIC_MODEL: z.string().default("claude-opus-4-5"),
   ANTHROPIC_TIMEOUT_MS: z.coerce.number().default(15000),
+  ANTHROPIC_MAX_TOKENS: z.coerce.number().default(512),
 
   // ─── ElevenLabs ───────────────────────────────────
   ELEVENLABS_API_KEY: z.string().min(1, "ELEVENLABS_API_KEY is required"),

@@ -1,7 +1,7 @@
 import { anthropicClient } from "./client";
 import { toolRouter } from "./tool-router";
 import { buildSystemPrompt } from "./prompt-builder";
-import { AgentError } from "./errors";
+import { AgentError, type AgentErrorCategory } from "./errors";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -16,11 +16,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     promise,
     new Promise<T>((_, reject) =>
       setTimeout(
-        () => reject(new AgentError(`${label} timed out after ${ms}ms`)),
+        () => reject(new AgentError(`${label} timed out after ${ms}ms`, "timeout")),
         ms,
       ),
     ),
   ]);
+}
+
+function categoriseApiError(err: unknown): AgentErrorCategory {
+  if (!(err instanceof Error)) return "unknown";
+  const msg = err.message.toLowerCase();
+  if (msg.includes("timeout") || msg.includes("timed out")) return "timeout";
+  if (msg.includes("rate limit") || msg.includes("429")) return "rate_limit";
+  if (msg.includes("content") && msg.includes("policy")) return "content_policy";
+  if (
+    msg.includes("network") ||
+    msg.includes("econnreset") ||
+    msg.includes("econnrefused") ||
+    msg.includes("fetch failed")
+  ) return "network";
+  return "unknown";
 }
 
 function extractTextFromResponse(
@@ -49,21 +64,33 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
     if (iterations >= MAX_TOOL_ITERATIONS) {
       throw new AgentError(
         `Agent exceeded maximum tool iterations (${MAX_TOOL_ITERATIONS}). Possible reasoning loop.`,
+        "iteration_limit",
       );
     }
     iterations++;
-    const response = (await withTimeout(
-      anthropicClient.messages.create({
-        model: config.ANTHROPIC_MODEL,
-        system: buildSystemPrompt(ctx),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: toolRouter.getDefinitions() as any,
-        messages,
-        max_tokens: 1024,
-      }),
-      config.ANTHROPIC_TIMEOUT_MS,
-      "LLM call",
-    )) as Anthropic.Message;
+    let response: Anthropic.Message;
+    try {
+      response = (await withTimeout(
+        anthropicClient.messages.create({
+          model: config.ANTHROPIC_MODEL,
+          system: buildSystemPrompt(ctx),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tools: toolRouter.getDefinitions() as any,
+          tool_choice: { type: "auto" },
+          messages,
+          max_tokens: config.ANTHROPIC_MAX_TOKENS,
+        }),
+        config.ANTHROPIC_TIMEOUT_MS,
+        "LLM call",
+      )) as Anthropic.Message;
+    } catch (err) {
+      if (err instanceof AgentError) throw err;
+      throw new AgentError(
+        err instanceof Error ? err.message : "Unknown API error",
+        categoriseApiError(err),
+        err,
+      );
+    }
 
     totalInputTokens += response.usage.input_tokens;
     totalOutputTokens += response.usage.output_tokens;

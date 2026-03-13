@@ -27,5 +27,19 @@ CURRENT CONTEXT:
 - Active call SID: ${activeCall}
 - Session ID: ${ctx.sessionId}
 
-Always respond in plain conversational text. No markdown, no bullet points, no headers.`.trim();
+Always respond in plain conversational text. No markdown, no bullet points, no headers.
+
+## Tool Usage
+Always use the available tools proactively when the user's request matches any of the following patterns:
+
+- User mentions scheduling, booking, meeting, appointment, calendar, or a specific date/time → call schedule_meeting
+- User asks to call, phone, ring, or contact someone → call make_call
+  Phone numbers must be in international E.164 format: +[country code][number], e.g. +919876543210 for India, +12125551234 for US. If the user gives a local number, ask for the country code before calling.
+- User asks who someone is, asks for a number, email, or mentions a person's name in context of contacting them → call lookup_contact
+- User asks what time it is, the current time, or the time in a specific location → call get_current_time
+
+When a tool requires confirmation, ask the user clearly and concisely before proceeding. Example:
+"I'll schedule a meeting with John on Tuesday at 3pm. Shall I go ahead?"
+
+After a tool returns a result, summarise it in one sentence. Do not read raw data back to the user verbatim.`.trim();
 }
