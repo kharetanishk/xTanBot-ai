@@ -4,6 +4,7 @@ import { enqueueAgentJob } from "@xtanbot/queues";
 import { emit } from "@xtanbot/events";
 import { config } from "@xtanbot/config";
 import { callRepository, userRepository } from "@xtanbot/db";
+import { counter, gauge } from "@xtanbot/observability";
 import {
   createStreamHandler,
   buildTwilioAudioMessage,
@@ -18,6 +19,15 @@ import type { PipelineSession } from "./types";
 import { randomUUID } from "crypto";
 
 const logger = createLogger("VoicePipeline");
+
+const activeCallsGauge = gauge(
+  "xtanbot_active_calls",
+  "Number of currently active voice call sessions",
+);
+const bargeInTotal = counter(
+  "xtanbot_barge_in_total",
+  "Total number of barge-in interruptions detected",
+);
 
 const FILLER_WORDS = [
   "um", "uh", "hmm", "mhm", "mm",
@@ -210,6 +220,12 @@ export function createPipeline(wsSend: WebSocketSend) {
         timestamp: new Date().toISOString(),
       });
 
+      try {
+        activeCallsGauge.inc();
+      } catch (err) {
+        logger.error({ err }, "Failed to record active_calls metric");
+      }
+
       logger.info({ sessionId, callSid, userId, userName, userTimezone }, "Pipeline session started");
 
       deepgramConnection = createDeepgramConnection(async (result) => {
@@ -231,6 +247,11 @@ export function createPipeline(wsSend: WebSocketSend) {
           { sessionId: currentSession?.sessionId },
           "Barge-in detected — interrupting AI speech",
         );
+        try {
+          bargeInTotal.inc();
+        } catch (err) {
+          logger.error({ err }, "Failed to record barge_in_total metric");
+        }
       }
 
       if (!currentSession) return;
@@ -271,6 +292,12 @@ export function createPipeline(wsSend: WebSocketSend) {
 
     if (currentSession) {
       await deleteSession(currentSession.sessionId);
+
+      try {
+        activeCallsGauge.dec();
+      } catch (err) {
+        logger.error({ err }, "Failed to record active_calls metric");
+      }
 
       await emit.sessionExpired({
         sessionId: currentSession.sessionId,

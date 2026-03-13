@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@xtanbot/ai-core": "workspace:*",
+    "@xtanbot/observability": "workspace:*",
     "@xtanbot/config": "workspace:*",
     "@xtanbot/db": "workspace:*",
     "@xtanbot/events": "workspace:*",

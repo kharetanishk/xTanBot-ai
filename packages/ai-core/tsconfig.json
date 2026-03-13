@@ -6,7 +6,8 @@
     "paths": {
       "@xtanbot/config": ["../config/dist/index.d.ts"],
       "@xtanbot/logger": ["../logger/dist/index.d.ts"],
-      "@xtanbot/zod-schemas": ["../zod-schemas/dist/index.d.ts"]
+      "@xtanbot/zod-schemas": ["../zod-schemas/dist/index.d.ts"],
+      "@xtanbot/observability": ["../observability/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*"],

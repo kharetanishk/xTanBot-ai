@@ -4,10 +4,17 @@ import { buildSystemPrompt } from "./prompt-builder";
 import { AgentError, type AgentErrorCategory } from "./errors";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
+import { counter } from "@xtanbot/observability";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentContext, AgentResponse, AgentMessage } from "./types";
 
 const logger = createLogger("AgentKernel");
+
+const toolCallsTotal = counter(
+  "xtanbot_tool_calls_total",
+  "Total number of tool invocations by Claude",
+  ["tool_name"],
+);
 
 const MAX_TOOL_ITERATIONS = 10;
 
@@ -220,6 +227,16 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       );
 
       const validResults = toolResults.filter(Boolean);
+
+      try {
+        for (const block of toolUseBlocks) {
+          if (block.type === "tool_use") {
+            toolCallsTotal.inc({ tool_name: block.name });
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, "Failed to record tool_calls_total metric");
+      }
 
       messages.push({
         role: "assistant",

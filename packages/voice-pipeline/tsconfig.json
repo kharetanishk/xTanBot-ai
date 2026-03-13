@@ -9,7 +9,8 @@
       "@xtanbot/logger": ["../logger/dist/index.d.ts"],
       "@xtanbot/redis": ["../redis/dist/index.d.ts"],
       "@xtanbot/queues": ["../queues/dist/index.d.ts"],
-      "@xtanbot/events": ["../events/dist/index.d.ts"]
+      "@xtanbot/events": ["../events/dist/index.d.ts"],
+      "@xtanbot/observability": ["../observability/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*"],

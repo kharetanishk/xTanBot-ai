@@ -20,6 +20,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
     "@xtanbot/config": "workspace:*",
+    "@xtanbot/observability": "workspace:*",
     "@xtanbot/logger": "workspace:*",
     "@xtanbot/zod-schemas": "workspace:*",
     "zod": "^3.23.0"

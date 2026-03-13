@@ -17,6 +17,7 @@
     "@fastify/rate-limit": "^9.0.0",
     "@fastify/websocket": "^10.0.0",
     "@xtanbot/config": "workspace:*",
+    "@xtanbot/observability": "workspace:*",
     "@xtanbot/db": "workspace:*",
     "@xtanbot/events": "workspace:*",
     "@xtanbot/logger": "workspace:*",

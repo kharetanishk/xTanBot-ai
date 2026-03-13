@@ -56,6 +56,9 @@ importers:
       '@xtanbot/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@xtanbot/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@xtanbot/queues':
         specifier: workspace:*
         version: link:../../packages/queues
@@ -184,6 +187,9 @@ importers:
       '@xtanbot/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@xtanbot/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@xtanbot/queues':
         specifier: workspace:*
         version: link:../../packages/queues
@@ -224,6 +230,9 @@ importers:
       '@xtanbot/logger':
         specifier: workspace:*
         version: link:../logger
+      '@xtanbot/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@xtanbot/zod-schemas':
         specifier: workspace:*
         version: link:../zod-schemas
@@ -493,6 +502,9 @@ importers:
       '@xtanbot/logger':
         specifier: workspace:*
         version: link:../logger
+      '@xtanbot/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@xtanbot/queues':
         specifier: workspace:*
         version: link:../queues

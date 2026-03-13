@@ -13,7 +13,8 @@
       "@xtanbot/voice-pipeline": [
         "../../packages/voice-pipeline/dist/index.d.ts"
       ],
-      "@xtanbot/zod-schemas": ["../../packages/zod-schemas/dist/index.d.ts"]
+      "@xtanbot/zod-schemas": ["../../packages/zod-schemas/dist/index.d.ts"],
+      "@xtanbot/observability": ["../../packages/observability/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*"],

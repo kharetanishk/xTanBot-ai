@@ -6,9 +6,25 @@ import { conversationRepository } from "@xtanbot/db";
 import { emit } from "@xtanbot/events";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
+import { counter, histogram } from "@xtanbot/observability";
 import type { AgentJob } from "@xtanbot/queues";
 
 const logger = createLogger("AgentWorker");
+
+const agentResponseMs = histogram(
+  "xtanbot_agent_response_ms",
+  "Time from agent job start to runAgent completion in ms",
+  [100, 500, 1000, 2000, 5000, 10000, 15000],
+);
+const queueWaitMs = histogram(
+  "xtanbot_queue_wait_ms",
+  "Time from job enqueue to processing start in ms",
+  [100, 500, 1000, 2000, 5000, 10000],
+);
+const agentCostUsd = counter(
+  "xtanbot_agent_cost_usd_total",
+  "Cumulative Claude API cost in USD across all sessions",
+);
 
 const FALLBACK_PHRASES = [
   "I'm sorry, I ran into an issue. Could you please repeat that?",
@@ -102,6 +118,13 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
 
   logger.info({ sessionId, jobId: job.id }, "Processing agent job");
 
+  try {
+    const waitMs = job.processedOn ? job.processedOn - job.timestamp : 0;
+    queueWaitMs.observe(waitMs);
+  } catch (err) {
+    logger.error({ err }, "Failed to record queue_wait_ms metric");
+  }
+
   // 1. Load session from Redis
   const session = await getSession(sessionId);
   if (!session) {
@@ -167,6 +190,7 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
   const updatedMessages = [...session.messages, userMessage];
 
   // 3. Run agent
+  const agentStart = Date.now();
   const agentResponse = await runAgent({
     sessionId,
     userId,
@@ -176,6 +200,11 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
       content: m.content,
     })),
   });
+  try {
+    agentResponseMs.observe(Date.now() - agentStart);
+  } catch (err) {
+    logger.error({ err }, "Failed to record agent_response_ms metric");
+  }
 
   // 4. Add assistant response to history
   const assistantMessage = {
@@ -243,6 +272,12 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
     },
     "Agent turn cost",
   );
+
+  try {
+    agentCostUsd.inc(turnCostUSD);
+  } catch (err) {
+    logger.error({ err }, "Failed to record agent_cost_usd metric");
+  }
 
   try {
     const costKey = `cost:session:${sessionId}`;
