@@ -4,10 +4,10 @@
     "slug": "xtanbot",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "",
       "resizeMode": "contain",
       "backgroundColor": "#0a0a0a"
     },
@@ -18,7 +18,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "",
         "backgroundColor": "#0a0a0a"
       },
       "package": "ai.xtanbot.app"

@@ -10,26 +10,36 @@ import {
   type TextInput as TextInputType,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { useLogin } from "../../src/hooks/useAuth";
+import { useRegister } from "../../src/hooks/useAuth";
 import { parseError } from "../../src/utils/error.utils";
 import Button from "../../src/components/common/Button";
 import Input from "../../src/components/common/Input";
 import ErrorMessage from "../../src/components/common/ErrorMessage";
 
-export default function LoginScreen() {
+export default function RegisterScreen() {
   const router = useRouter();
-  const login = useLogin();
+  const register = useRegister();
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const emailRef = useRef<TextInputType>(null);
   const passwordRef = useRef<TextInputType>(null);
+  const confirmRef = useRef<TextInputType>(null);
 
-  function handleLogin() {
+  function handleRegister() {
     setError(null);
-    login.mutate(
-      { email: email.trim(), password },
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    register.mutate(
+      { name: name.trim(), email: email.trim(), password },
       {
         onSuccess: () => router.replace("/(app)/(tabs)"),
         onError: (err) => setError(parseError(err)),
@@ -47,13 +57,27 @@ export default function LoginScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Text style={styles.backText}>← BACK</Text>
+        </Pressable>
+
         <View style={styles.header}>
           <Text style={styles.logo}>xTanBot</Text>
           <Text style={styles.subtitle}>AI VOICE ASSISTANT</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>SIGN IN</Text>
+          <Text style={styles.cardTitle}>CREATE ACCOUNT</Text>
+
+          <Input
+            label="FULL NAME"
+            value={name}
+            onChangeText={setName}
+            placeholder="Jane Doe"
+            autoCapitalize="words"
+            returnKeyType="next"
+            onSubmitEditing={() => emailRef.current?.focus()}
+          />
 
           <Input
             label="EMAIL"
@@ -72,23 +96,33 @@ export default function LoginScreen() {
             onChangeText={setPassword}
             placeholder="••••••••"
             secureTextEntry
+            returnKeyType="next"
+            onSubmitEditing={() => confirmRef.current?.focus()}
+          />
+
+          <Input
+            label="CONFIRM PASSWORD"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="••••••••"
+            secureTextEntry
             returnKeyType="done"
-            onSubmitEditing={handleLogin}
+            onSubmitEditing={handleRegister}
           />
 
           <ErrorMessage message={error} />
 
           <Button
-            title="SIGN IN"
-            onPress={handleLogin}
-            loading={login.isPending}
+            title="CREATE ACCOUNT"
+            onPress={handleRegister}
+            loading={register.isPending}
           />
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account?</Text>
-          <Pressable onPress={() => router.push("/(auth)/register")}>
-            <Text style={styles.footerLink}>CREATE ACCOUNT →</Text>
+          <Text style={styles.footerText}>Already have an account?</Text>
+          <Pressable onPress={() => router.back()}>
+            <Text style={styles.footerLink}>SIGN IN →</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -106,16 +140,24 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 48,
   },
+  backButton: {
+    alignSelf: "flex-start",
+    marginBottom: 24,
+  },
+  backText: {
+    color: "#FBBF24",
+    fontWeight: "900",
+    fontSize: 14,
+  },
   header: {
     alignItems: "center",
-    marginBottom: 48,
+    marginBottom: 36,
   },
   logo: {
-    fontSize: 48,
+    fontSize: 32,
     fontWeight: "900",
     color: "#FBBF24",
     letterSpacing: -2,
