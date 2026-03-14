@@ -4,8 +4,8 @@ import { createLogger } from "@xtanbot/logger";
 
 const logger = createLogger("NotificationQueue");
 
-export const NOTIFICATION_QUEUE_NAME = "xtanbot:notification" as const;
-export const NOTIFICATION_JOB_NAME = "notification:send" as const;
+export const NOTIFICATION_QUEUE_NAME = "xtanbot-notification" as const;
+export const NOTIFICATION_JOB_NAME = "notification-send" as const;
 
 const connection = {
   host: new URL(config.REDIS_URL).hostname,

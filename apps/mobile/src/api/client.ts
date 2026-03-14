@@ -1,10 +1,34 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import {
   API_BASE_URL,
   API_TIMEOUT_MS,
   TOKEN_STORAGE_KEY,
-} from "@constants/config";
+} from "../constants/config";
+
+async function getToken(): Promise<string | null> {
+  try {
+    if (Platform.OS === "web") {
+      return localStorage.getItem(TOKEN_STORAGE_KEY);
+    }
+    return await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+async function deleteToken(): Promise<void> {
+  try {
+    if (Platform.OS === "web") {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return;
+    }
+    await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -14,7 +38,7 @@ export const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
-    const token = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
+    const token = await getToken();
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -27,7 +51,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
-      await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
+      await deleteToken();
     }
     return Promise.reject(error);
   },

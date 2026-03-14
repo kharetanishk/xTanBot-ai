@@ -4,8 +4,8 @@ import { createLogger } from "@xtanbot/logger";
 
 const logger = createLogger("AgentQueue");
 
-export const AGENT_QUEUE_NAME = "xtanbot:agent" as const;
-export const AGENT_JOB_NAME = "agent:process" as const;
+export const AGENT_QUEUE_NAME = "xtanbot-agent" as const;
+export const AGENT_JOB_NAME = "agent-process" as const;
 
 const connection = {
   host: new URL(config.REDIS_URL).hostname,

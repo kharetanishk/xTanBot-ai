@@ -4,8 +4,8 @@ import { createLogger } from "@xtanbot/logger";
 
 const logger = createLogger("TtsQueue");
 
-export const TTS_QUEUE_NAME = "xtanbot:tts" as const;
-export const TTS_JOB_NAME = "tts:synthesize" as const;
+export const TTS_QUEUE_NAME = "xtanbot-tts" as const;
+export const TTS_JOB_NAME = "tts-synthesize" as const;
 
 const connection = {
   host: new URL(config.REDIS_URL).hostname,

@@ -10,6 +10,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: "Dashboard" }} />
+      <Tabs.Screen name="contacts" options={{ title: "Contacts" }} />
     </Tabs>
   );
 }

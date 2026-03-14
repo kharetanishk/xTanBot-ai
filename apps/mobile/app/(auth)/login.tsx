@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     shadowColor: "#000000",
     shadowOpacity: 1,
     shadowRadius: 0,
-    elevation: 6,
+    elevation: 8,
     marginBottom: 24,
   },
   cardTitle: {
