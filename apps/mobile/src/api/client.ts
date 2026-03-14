@@ -1,0 +1,42 @@
+import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import * as SecureStore from "expo-secure-store";
+import {
+  API_BASE_URL,
+  API_TIMEOUT_MS,
+  TOKEN_STORAGE_KEY,
+} from "@constants/config";
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT_MS,
+  headers: { "Content-Type": "application/json" },
+});
+
+apiClient.interceptors.request.use(
+  async (config: InternalAxiosRequestConfig) => {
+    const token = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
+    }
+    return Promise.reject(error);
+  },
+);
+
+export function getApiError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: string } | undefined;
+    return data?.message ?? error.message ?? "Something went wrong";
+  }
+  return "Something went wrong";
+}
