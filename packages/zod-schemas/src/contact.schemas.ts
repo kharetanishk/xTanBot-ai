@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const CreateContactSchema = z.object({
-  userId: z.string().uuid(),
   name: z.string().min(1).max(100),
   email: z.string().email().optional(),
   phone: z
@@ -12,9 +11,7 @@ export const CreateContactSchema = z.object({
   notes: z.string().max(1000).optional(),
 });
 
-export const UpdateContactSchema = CreateContactSchema.partial().omit({
-  userId: true,
-});
+export const UpdateContactSchema = CreateContactSchema.partial();
 
 export const ContactSchema = z.object({
   id: z.string().uuid(),
@@ -28,6 +25,8 @@ export const ContactSchema = z.object({
   updatedAt: z.date(),
 });
 
-export type CreateContact = z.infer<typeof CreateContactSchema>;
+export type CreateContact = z.infer<typeof CreateContactSchema> & {
+  userId: string;
+};
 export type UpdateContact = z.infer<typeof UpdateContactSchema>;
 export type Contact = z.infer<typeof ContactSchema>;
