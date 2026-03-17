@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "xTanBot",
-    "slug": "xtanbot",
+    "slug": "xtanbot-ai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "",
@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0a0a0a"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.xtanbot.app"
@@ -29,13 +31,20 @@
       [
         "expo-notifications",
         {
-          "color": "#6366f1"
+          "color": "#FBBF24"
         }
       ]
     ],
     "scheme": "xtanbot",
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "edeae96b-89f7-40f2-967b-c4f8486b6aea"
+      }
+    },
+    "owner": "tanishk1601s-organization"
   }
 }

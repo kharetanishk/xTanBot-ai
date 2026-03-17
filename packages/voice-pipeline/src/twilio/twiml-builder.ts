@@ -3,7 +3,10 @@ import { config } from "@xtanbot/config";
 
 const logger = createLogger("TwiMLBuilder");
 
-export function buildInboundCallTwiML(streamUrl: string): string {
+export function buildInboundCallTwiML(
+  streamUrl: string,
+  _context?: unknown,
+): string {
   logger.debug({ streamUrl }, "Building inbound call TwiML");
 
   return `<?xml version="1.0" encoding="UTF-8"?>

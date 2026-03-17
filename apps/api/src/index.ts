@@ -7,7 +7,12 @@ import { FastifyAdapter } from "@bull-board/fastify";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
 import { collectMetrics, metricsContentType } from "@xtanbot/observability";
-import { agentQueue, ttsQueue, notificationQueue } from "@xtanbot/queues";
+import {
+  agentQueue,
+  ttsQueue,
+  notificationQueue,
+  meetingCallQueue,
+} from "@xtanbot/queues";
 import { serverConfig } from "./config/server.config";
 import { registerPlugins } from "./plugins";
 import { healthRoutes } from "./routes/health.route";
@@ -15,6 +20,8 @@ import { twilioRoutes } from "./routes/twilio.route";
 import { callsRoutes } from "./routes/calls.route";
 import { meetingsRoutes } from "./routes/meetings.route";
 import { contactsRoutes } from "./routes/contacts.route";
+import { conversationsRoutes } from "./routes/conversations.route";
+import { pushRoutes } from "./routes/push.route";
 import { usersRoutes } from "./routes/users.route";
 
 const logger = createLogger("API");
@@ -47,6 +54,7 @@ async function bootstrap(): Promise<void> {
       new BullMQAdapter(agentQueue),
       new BullMQAdapter(ttsQueue),
       new BullMQAdapter(notificationQueue),
+      new BullMQAdapter(meetingCallQueue),
     ],
     serverAdapter,
   });
@@ -103,6 +111,8 @@ async function bootstrap(): Promise<void> {
   await app.register(callsRoutes);
   await app.register(meetingsRoutes);
   await app.register(contactsRoutes);
+  await app.register(conversationsRoutes);
+  await app.register(pushRoutes);
 
   app.get(
     "/metrics",

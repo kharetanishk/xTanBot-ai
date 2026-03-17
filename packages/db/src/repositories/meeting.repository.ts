@@ -2,7 +2,7 @@ import { prisma } from "../client";
 import type { CreateMeeting, UpdateMeeting } from "@xtanbot/zod-schemas";
 
 export const meetingRepository = {
-  async create(data: CreateMeeting) {
+  async create(data: CreateMeeting & { userId: string }) {
     return prisma.meeting.create({ data });
   },
 

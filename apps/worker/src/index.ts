@@ -1,10 +1,36 @@
 import * as Sentry from "@sentry/node";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
+import { meetingCallQueue } from "@xtanbot/queues";
 import { createAgentWorker } from "./workers/agent.worker";
 import { createNotificationWorker } from "./workers/notification.worker";
+import { createMeetingCallWorker } from "./workers/meeting-call.worker";
 
 const logger = createLogger("Worker");
+
+async function scheduleDailyBriefings(): Promise<void> {
+  try {
+    await meetingCallQueue.removeRepeatable("daily-briefing", {
+      pattern: "0 8 * * *",
+      tz: "Asia/Kolkata",
+    });
+  } catch {
+    // ignore if not present yet
+  }
+
+  await meetingCallQueue.add(
+    "daily-briefing",
+    { type: "daily-briefing" },
+    {
+      repeat: {
+        pattern: "0 8 * * *",
+        tz: "Asia/Kolkata",
+      },
+    },
+  );
+
+  logger.info("Daily briefing scheduled for 8am IST");
+}
 
 async function bootstrap(): Promise<void> {
   if (config.SENTRY_DSN) {
@@ -22,11 +48,18 @@ async function bootstrap(): Promise<void> {
 
   const agentWorker = createAgentWorker();
   const notificationWorker = createNotificationWorker();
+  const meetingCallWorker = createMeetingCallWorker();
+
+  await scheduleDailyBriefings();
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "Shutting down workers...");
 
-    await Promise.all([agentWorker.close(), notificationWorker.close()]);
+    await Promise.all([
+      agentWorker.close(),
+      notificationWorker.close(),
+      meetingCallWorker.close(),
+    ]);
 
     logger.info("All workers shut down cleanly");
     process.exit(0);

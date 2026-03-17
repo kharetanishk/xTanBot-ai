@@ -8,7 +8,7 @@ import {
   type TextStyle,
 } from "react-native";
 
-type ButtonVariant = "primary" | "secondary" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 type ButtonProps = {
   title: string;
@@ -55,6 +55,19 @@ const variantStyles: Record<ButtonVariant, { container: ViewStyle; text: TextSty
       shadowOpacity: 0,
       shadowRadius: 0,
       elevation: 0,
+    },
+    text: { color: "#ffffff" },
+  },
+  danger: {
+    container: {
+      backgroundColor: "#ef4444",
+      borderWidth: 3,
+      borderColor: "#000000",
+      shadowOffset: { width: 4, height: 4 },
+      shadowColor: "#000000",
+      shadowOpacity: 1,
+      shadowRadius: 0,
+      elevation: 4,
     },
     text: { color: "#ffffff" },
   },

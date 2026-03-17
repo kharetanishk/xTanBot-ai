@@ -11,10 +11,7 @@ export const prisma: PrismaClient =
     datasources: {
       db: { url: config.DATABASE_URL },
     },
-    log:
-      config.NODE_ENV === "development"
-        ? ["query", "error", "warn"]
-        : ["error"],
+    log: ["warn", "error"],
   });
 
 if (config.NODE_ENV !== "production") {

@@ -3,7 +3,7 @@ import { setSession, getSession, deleteSession } from "@xtanbot/redis";
 import { enqueueAgentJob } from "@xtanbot/queues";
 import { emit } from "@xtanbot/events";
 import { config } from "@xtanbot/config";
-import { callRepository, userRepository } from "@xtanbot/db";
+import { callRepository, userRepository, prisma } from "@xtanbot/db";
 import { counter, gauge } from "@xtanbot/observability";
 import {
   createStreamHandler,
@@ -50,7 +50,17 @@ function stripFillerWords(transcript: string): string {
 
 export type WebSocketSend = (data: string) => void;
 
-export function createPipeline(wsSend: WebSocketSend) {
+type MeetingContext = {
+  callType?: "scheduled-meeting" | "daily-briefing";
+  meetingTitle?: string;
+  attendeeName?: string;
+  userName?: string;
+  meetingCount?: number;
+  meetings?: { title: string; time: string }[];
+  userId?: string;
+};
+
+export function createPipeline(wsSend: WebSocketSend, meetingContext?: MeetingContext | null) {
   let deepgramConnection: ReturnType<typeof createDeepgramConnection> = null;
   let currentStreamSid: string | null = null;
   let currentSession: PipelineSession | null = null;
@@ -178,6 +188,13 @@ export function createPipeline(wsSend: WebSocketSend) {
             userName = userRecord.name;
             userTimezone = userRecord.timezone;
           }
+        } else if (meetingContext?.userId) {
+          userId = meetingContext.userId;
+          const userRecord = await userRepository.findById(userId);
+          if (userRecord) {
+            userName = userRecord.name;
+            userTimezone = userRecord.timezone;
+          }
         } else {
           logger.warn({ callSid }, "Call record not found — using fallback userId");
           userId = callSid;
@@ -228,6 +245,50 @@ export function createPipeline(wsSend: WebSocketSend) {
 
       logger.info({ sessionId, callSid, userId, userName, userTimezone }, "Pipeline session started");
 
+      let greeting = "Hello! I'm xTanBot, your AI assistant. How can I help you today?";
+
+      if (meetingContext?.callType === "scheduled-meeting") {
+        greeting = `Hi ${meetingContext.attendeeName}! This is xTanBot calling about your "${meetingContext.meetingTitle}" meeting. How are you doing?`;
+      } else if (meetingContext?.callType === "daily-briefing") {
+        const count = meetingContext.meetingCount ?? 0;
+        const meetingWord = count === 1 ? "meeting" : "meetings";
+        greeting = `Good morning ${meetingContext.userName}! This is your xTanBot daily briefing. You have ${count} ${meetingWord} today. Would you like to review them or make any changes?`;
+      } else if (!meetingContext) {
+        const callerPhone = from;
+        if (callerPhone) {
+          try {
+            const contact = await prisma.contact.findFirst({
+              where: { phone: callerPhone, deletedAt: null },
+            });
+            if (contact) {
+              const upcomingMeeting = await prisma.meeting.findFirst({
+                where: {
+                  userId: contact.userId,
+                  attendees: { has: contact.email ?? "" },
+                  startTime: { gte: new Date() },
+                  status: { in: ["scheduled", "confirmed"] },
+                },
+                orderBy: { startTime: "asc" },
+              });
+              if (upcomingMeeting) {
+                const timeStr = new Date(upcomingMeeting.startTime).toLocaleTimeString("en-IN", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                });
+                greeting = `Hi ${contact.name}! Great to hear from you. I see you have "${upcomingMeeting.title}" scheduled for ${timeStr}. Would you like to discuss that, or is there something else I can help with?`;
+              } else {
+                greeting = `Hi ${contact.name}! Great to hear from you. How can I help you today?`;
+              }
+            }
+          } catch (err) {
+            logger.error({ err }, "Failed to build smart inbound greeting");
+          }
+        }
+      } else if (userName) {
+        greeting = `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`;
+      }
+
       deepgramConnection = createDeepgramConnection(
         async (result) => {
           await handleTranscript(result.transcript, result.isFinal);
@@ -241,9 +302,6 @@ export function createPipeline(wsSend: WebSocketSend) {
         },
       );
 
-      const greeting = userName
-        ? `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`
-        : "Hello! I'm xTanBot, your AI assistant. How can I help you today?";
       await handleTTSResponse(greeting);
       resetSilenceTimer();
     },

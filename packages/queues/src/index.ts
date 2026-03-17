@@ -11,6 +11,11 @@ export {
   NOTIFICATION_JOB_NAME,
 } from "./queues/notification.queue";
 
+export {
+  meetingCallQueue,
+  MEETING_CALL_QUEUE_NAME,
+} from "./queues/meeting-call.queue";
+
 // Jobs & Schemas
 export { AgentJobSchema, enqueueAgentJob } from "./jobs/agent.job";
 export { TtsJobSchema, enqueueTtsJob } from "./jobs/tts.job";
@@ -23,3 +28,9 @@ export {
 export type { AgentJob } from "./jobs/agent.job";
 export type { TtsJob } from "./jobs/tts.job";
 export type { NotificationJob } from "./jobs/notification.job";
+export type {
+  AutoCallMeetingJob,
+  MeetingReminderJob,
+  PostCallIntelligenceJob,
+  DailyBriefingJob,
+} from "./jobs/meeting-call.job";

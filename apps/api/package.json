@@ -19,6 +19,7 @@
     "@fastify/rate-limit": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
     "@sentry/node": "^10.43.0",
+    "@xtanbot/ai-core": "workspace:*",
     "@xtanbot/config": "workspace:*",
     "@xtanbot/db": "workspace:*",
     "@xtanbot/events": "workspace:*",

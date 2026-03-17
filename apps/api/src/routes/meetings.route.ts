@@ -9,8 +9,8 @@ const logger = createLogger("MeetingsRoute");
 export async function meetingsRoutes(app: FastifyInstance): Promise<void> {
   app.post("/meetings", { preHandler: requireAuth }, async (request, reply) => {
     const body = CreateMeetingSchema.parse(request.body);
-    const { userId } = request.user;
-    const meeting = await meetingService.create({ ...body, userId });
+    const userId = (request.user as any).userId as string;
+    const meeting = await meetingService.create(body, userId);
     return reply.status(201).send(meeting);
   });
 

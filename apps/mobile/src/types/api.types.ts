@@ -21,6 +21,7 @@ export interface Call {
   status: "initiated" | "in-progress" | "completed" | "failed" | "no-answer";
   duration?: number;
   callSid: string;
+  summary?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,11 +31,31 @@ export interface Meeting {
   userId: string;
   title: string;
   description?: string;
+  startTime: string;
+  endTime: string;
   attendees: string[];
-  scheduledAt: string;
-  duration: number;
-  status: "scheduled" | "completed" | "cancelled";
+  status: "scheduled" | "confirmed" | "cancelled" | "completed" | "rescheduled";
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  toolsUsed?: string[];
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  userId: string;
+  callId?: string;
+  messages: Message[];
+  summary?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Contact {

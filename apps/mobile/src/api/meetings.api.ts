@@ -21,8 +21,10 @@ export const meetingsApi = {
     title: string;
     description?: string;
     attendees: string[];
-    scheduledAt: string;
-    duration: number;
+    startTime: string;
+    endTime: string;
+    location?: string;
+    timezone?: string;
   }): Promise<Meeting> => {
     const res = await apiClient.post<Meeting>("/meetings", data);
     return res.data;
@@ -33,8 +35,10 @@ export const meetingsApi = {
     data: Partial<{
       title: string;
       description: string;
-      scheduledAt: string;
-      duration: number;
+      startTime: string;
+      endTime: string;
+      location: string;
+      timezone: string;
     }>,
   ): Promise<Meeting> => {
     const res = await apiClient.patch<Meeting>(`/meetings/${id}`, data);

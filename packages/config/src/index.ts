@@ -20,6 +20,9 @@ const EnvSchema = z.object({
   // ─── Redis ────────────────────────────────────────
   REDIS_URL: z.string().url("REDIS_URL must be a valid URL"),
 
+  // ─── Public API URL (for Twilio webhooks) ─────────
+  API_URL: z.string().url("API_URL must be a valid URL"),
+
   // ─── Anthropic ────────────────────────────────────
   ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
   ANTHROPIC_MODEL: z.string().default("claude-opus-4-5"),
@@ -64,6 +67,9 @@ const EnvSchema = z.object({
   // ─── Bull Board ──────────────────────────────────
   BULL_BOARD_USERNAME: z.string().default("admin"),
   BULL_BOARD_PASSWORD: z.string().default(""),
+
+  // ─── Expo / Mobile ───────────────────────────────
+  EXPO_PUBLIC_PROJECT_ID: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

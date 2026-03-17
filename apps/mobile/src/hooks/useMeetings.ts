@@ -1,19 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { meetingsApi } from "@api/meetings.api";
-import { queryKeys } from "@constants/queryKeys";
+import { meetingsApi } from "../api/meetings.api";
+import { queryKeys } from "../constants/queryKeys";
 
 export function useMeetings() {
   return useQuery({
     queryKey: queryKeys.meetings.all,
-    queryFn: meetingsApi.list,
-    staleTime: 1000 * 60 * 2,
+    queryFn: () => meetingsApi.list(),
+    staleTime: 1000 * 60,
   });
 }
 
 export function useUpcomingMeetings() {
   return useQuery({
     queryKey: queryKeys.meetings.upcoming,
-    queryFn: meetingsApi.upcoming,
+    queryFn: () => meetingsApi.upcoming(),
     staleTime: 1000 * 60,
   });
 }
@@ -44,6 +44,7 @@ export function useCancelMeeting(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.meetings.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.meetings.upcoming });
+      queryClient.invalidateQueries({ queryKey: queryKeys.meetings.detail(id) });
     },
   });
 }

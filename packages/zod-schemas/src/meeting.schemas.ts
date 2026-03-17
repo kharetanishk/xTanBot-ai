@@ -9,7 +9,6 @@ export const MeetingStatusSchema = z.enum([
 ]);
 
 export const CreateMeetingSchema = z.object({
-  userId: z.string().uuid(),
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
   startTime: z.string().datetime(),
@@ -20,9 +19,7 @@ export const CreateMeetingSchema = z.object({
   timezone: z.string().default("UTC"),
 });
 
-export const UpdateMeetingSchema = CreateMeetingSchema.partial().omit({
-  userId: true,
-});
+export const UpdateMeetingSchema = CreateMeetingSchema.partial();
 
 export const MeetingSchema = z.object({
   id: z.string().uuid(),
