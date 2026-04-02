@@ -75,12 +75,16 @@ export function createPipeline(
     let currentStreamSid: string | null = null;
     let currentSession: PipelineSession | null = null;
     let isSpeaking = false;
+    /** Twilio sends inbound media immediately (silence/comfort noise). Treating that as barge-in clears the greeting before it plays. */
+    let bargeInAllowed = false;
     let silenceTimer: NodeJS.Timeout | null = null;
     let disconnectTimer: NodeJS.Timeout | null = null;
     const SILENCE_PROMPT_MS = 8000;
     const SILENCE_DISCONNECT_MS = 10000;
     let lastTranscript = "";
     const MIN_TRANSCRIPT_LENGTH = 3;
+    /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
+    let hasBufferedOutboundMedia = false;
 
     function resetSilenceTimer(): void {
       if (silenceTimer) {
@@ -168,11 +172,15 @@ export function createPipeline(
 
     logger.debug({ textLength: text.length }, "Streaming TTS to Twilio");
 
-    wsSend(buildTwilioClearMessage(currentStreamSid));
+    if (hasBufferedOutboundMedia) {
+      wsSend(buildTwilioClearMessage(currentStreamSid));
+    }
 
     await streamTextToSpeech(text, async (audioBase64) => {
       if (!isSpeaking || !currentStreamSid) return;
+      if (!audioBase64?.length) return;
       wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
+      hasBufferedOutboundMedia = true;
     });
 
     isSpeaking = false;
@@ -181,6 +189,7 @@ export function createPipeline(
   const streamHandler = createStreamHandler({
     async onStart(callSid, streamSid, from, to) {
       try {
+        bargeInAllowed = false;
         currentStreamSid = streamSid;
 
         const sessionId = randomUUID();
@@ -376,6 +385,7 @@ export function createPipeline(
         );
 
         await handleTTSResponse(greeting);
+        bargeInAllowed = true;
         resetSilenceTimer();
       } catch (err) {
         logger.error({ err, callSid }, "Pipeline init failed — closing gracefully");
@@ -387,7 +397,9 @@ export function createPipeline(
     },
 
     async onAudioChunk(chunk) {
-      if (isSpeaking && currentStreamSid) {
+      const fromCallee = chunk.track !== "outbound";
+
+      if (bargeInAllowed && isSpeaking && currentStreamSid && fromCallee) {
         isSpeaking = false;
         wsSend(buildTwilioClearMessage(currentStreamSid));
         logger.info(

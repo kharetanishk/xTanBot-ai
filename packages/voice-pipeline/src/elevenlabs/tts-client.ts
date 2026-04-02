@@ -32,9 +32,11 @@ export async function streamTextToSpeech(
       output_format: "ulaw_8000",
     });
 
-    for await (const chunk of audioStream as AsyncIterable<Buffer>) {
-      const audioBase64 = chunk.toString("base64");
-      await onAudioChunk(audioBase64);
+    // Fetch/Web Streams yield Uint8Array; `Uint8Array#toString("base64")` does NOT base64-encode (Twilio 31951).
+    for await (const chunk of audioStream as AsyncIterable<Buffer | Uint8Array>) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (buf.length === 0) continue;
+      await onAudioChunk(buf.toString("base64"));
     }
 
     logger.debug("TTS stream completed");
@@ -62,8 +64,9 @@ export async function textToSpeechBuffer(
     output_format: "ulaw_8000",
   });
 
-  for await (const chunk of audioStream as AsyncIterable<Buffer>) {
-    chunks.push(chunk);
+  for await (const chunk of audioStream as AsyncIterable<Buffer | Uint8Array>) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (buf.length > 0) chunks.push(buf);
   }
 
   return Buffer.concat(chunks);

@@ -25,6 +25,7 @@ import { contactsRoutes } from "./routes/contacts.route";
 import { conversationsRoutes } from "./routes/conversations.route";
 import { pushRoutes } from "./routes/push.route";
 import { usersRoutes } from "./routes/users.route";
+import { attachTwilioMediaStreamWss } from "./twilio-media-stream";
 
 const logger = createLogger("API");
 
@@ -171,6 +172,9 @@ async function bootstrap(): Promise<void> {
     port: serverConfig.port,
     host: serverConfig.host,
   });
+
+  attachTwilioMediaStreamWss(app.server);
+  logger.info("Twilio Media Stream WebSocket attached on /twilio/stream (raw ws)");
 
   logger.info(
     { port: serverConfig.port, host: serverConfig.host },

@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { WebSocket } from "ws";
 import fp from "fastify-plugin";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
@@ -8,7 +7,6 @@ import {
   validateTwilioSignature,
   buildInboundCallTwiML,
   getStreamWebSocketUrl,
-  createPipeline,
 } from "@xtanbot/voice-pipeline";
 import { meetingCallQueue } from "@xtanbot/queues";
 import { callService } from "../services/call.service";
@@ -181,40 +179,5 @@ export const twilioRoutes = fp(async function twilioRoutes(
     },
   );
 
-  // WS /twilio/stream — Twilio media stream WebSocket
-  app.get("/twilio/stream", { websocket: true }, (socket: WebSocket) => {
-    // MUST be first to catch handshake/early errors
-    socket.on("error", (err: Error) => {
-      logger.error({ err }, "WebSocket error");
-    });
-
-    logger.info("WebSocket /twilio/stream connected");
-
-    try {
-      const pipeline = createPipeline(
-        (data: string) => {
-          if (socket.readyState === socket.OPEN) {
-            socket.send(data);
-          }
-        },
-        null,
-        (code: number, reason: string) => socket.close(code, reason),
-      );
-
-      socket.on("message", async (rawMessage: Buffer) => {
-        try {
-          await pipeline.handleMessage(rawMessage.toString());
-        } catch (err) {
-          logger.error({ err }, "Twilio stream message handler failed");
-        }
-      });
-
-      socket.on("close", () => {
-        logger.info("Twilio WebSocket stream disconnected");
-      });
-    } catch (err) {
-      logger.error({ err }, "WebSocket handler crashed");
-      socket.close(1011, "internal error");
-    }
-  });
+  // Media Stream WebSocket: see attachTwilioMediaStreamWss() in index.ts (raw ws, not @fastify/websocket).
 });

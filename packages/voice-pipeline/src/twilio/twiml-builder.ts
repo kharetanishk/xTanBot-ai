@@ -9,14 +9,16 @@ export function buildInboundCallTwiML(
 ): string {
   logger.debug({ streamUrl }, "Building inbound call TwiML");
 
+  // <Start><Stream> = unidirectional: Twilio sends audio to you only — you CANNOT play TTS back.
+  // <Connect><Stream> = bidirectional: required for outbound `media` messages (ElevenLabs → callee).
+  // Connect blocks further TwiML until the WebSocket closes; that keeps the call on the stream.
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Start>
+  <Connect>
     <Stream url="${streamUrl}">
       <Parameter name="direction" value="inbound"/>
     </Stream>
-  </Start>
-  <Pause length="600"/>
+  </Connect>
 </Response>`.trim();
 }
 
@@ -25,12 +27,11 @@ export function buildOutboundCallTwiML(streamUrl: string): string {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Start>
+  <Connect>
     <Stream url="${streamUrl}">
       <Parameter name="direction" value="outbound"/>
     </Stream>
-  </Start>
-  <Pause length="600"/>
+  </Connect>
 </Response>`.trim();
 }
 
