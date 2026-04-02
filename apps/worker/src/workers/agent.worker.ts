@@ -2,7 +2,7 @@ import { Worker, type Job } from "bullmq";
 import { AGENT_QUEUE_NAME } from "@xtanbot/queues";
 import { runAgent } from "@xtanbot/ai-core";
 import { getSession, setSession, redisConnection } from "@xtanbot/redis";
-import { conversationRepository } from "@xtanbot/db";
+import { conversationRepository, userRepository } from "@xtanbot/db";
 import { emit } from "@xtanbot/events";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
@@ -185,6 +185,31 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
 
   const updatedMessages = [...session.messages, userMessage];
 
+  let voiceContext: Record<string, unknown> = {};
+  try {
+    const raw = await redisConnection.get(`session:context:${callSid}`);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+      ) {
+        voiceContext = parsed as Record<string, unknown>;
+      }
+    }
+  } catch (err) {
+    log.warn({ err, callSid }, "Failed to load session:context from Redis");
+  }
+
+  let userProfile: { name: string; timezone: string } | undefined;
+  try {
+    const u = await userRepository.findById(userId);
+    if (u) userProfile = { name: u.name, timezone: u.timezone };
+  } catch {
+    // ignore
+  }
+
   // 3. Run agent
   const agentStart = Date.now();
   const agentResponse = await runAgent({
@@ -195,6 +220,8 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
       role: m.role as "user" | "assistant",
       content: m.content,
     })),
+    voiceContext,
+    userProfile,
   });
   try {
     agentResponseMs.observe(Date.now() - agentStart);

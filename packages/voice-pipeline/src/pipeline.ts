@@ -1,5 +1,5 @@
 import { createLogger } from "@xtanbot/logger";
-import { setSession, getSession, deleteSession } from "@xtanbot/redis";
+import { redisConnection, setSession, getSession, deleteSession } from "@xtanbot/redis";
 import { enqueueAgentJob } from "@xtanbot/queues";
 import { emit } from "@xtanbot/events";
 import { config } from "@xtanbot/config";
@@ -17,6 +17,10 @@ import {
 import { streamTextToSpeech } from "./elevenlabs/tts-client";
 import type { PipelineSession } from "./types";
 import { randomUUID } from "crypto";
+import {
+  registerVoiceTtsHandler,
+  unregisterVoiceTtsHandler,
+} from "./voice-session-registry";
 
 const logger = createLogger("VoicePipeline");
 
@@ -49,6 +53,7 @@ function stripFillerWords(transcript: string): string {
 }
 
 export type WebSocketSend = (data: string) => void;
+export type WebSocketClose = (code: number, reason: string) => void;
 
 type MeetingContext = {
   callType?: "scheduled-meeting" | "daily-briefing";
@@ -60,53 +65,58 @@ type MeetingContext = {
   userId?: string;
 };
 
-export function createPipeline(wsSend: WebSocketSend, meetingContext?: MeetingContext | null) {
-  let deepgramConnection: ReturnType<typeof createDeepgramConnection> = null;
-  let currentStreamSid: string | null = null;
-  let currentSession: PipelineSession | null = null;
-  let isSpeaking = false;
-  let silenceTimer: NodeJS.Timeout | null = null;
-  let disconnectTimer: NodeJS.Timeout | null = null;
-  const SILENCE_PROMPT_MS = 8000;
-  const SILENCE_DISCONNECT_MS = 10000;
-  let lastTranscript = "";
-  const MIN_TRANSCRIPT_LENGTH = 3;
+export function createPipeline(
+  wsSend: WebSocketSend,
+  meetingContext?: MeetingContext | null,
+  wsClose?: WebSocketClose,
+) {
+  try {
+    let deepgramConnection: ReturnType<typeof createDeepgramConnection> = null;
+    let currentStreamSid: string | null = null;
+    let currentSession: PipelineSession | null = null;
+    let isSpeaking = false;
+    let silenceTimer: NodeJS.Timeout | null = null;
+    let disconnectTimer: NodeJS.Timeout | null = null;
+    const SILENCE_PROMPT_MS = 8000;
+    const SILENCE_DISCONNECT_MS = 10000;
+    let lastTranscript = "";
+    const MIN_TRANSCRIPT_LENGTH = 3;
 
-  function resetSilenceTimer(): void {
-    if (silenceTimer) {
-      clearTimeout(silenceTimer);
-      silenceTimer = null;
-    }
-    if (disconnectTimer) {
-      clearTimeout(disconnectTimer);
-      disconnectTimer = null;
-    }
-    if (!currentSession) return;
+    function resetSilenceTimer(): void {
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        disconnectTimer = null;
+      }
+      if (!currentSession) return;
 
-    silenceTimer = setTimeout(() => {
-      if (!currentSession || isSpeaking) return;
-      logger.warn(
-        { sessionId: currentSession.sessionId },
-        "Silence detected — prompting user",
-      );
-      void handleTTSResponse("Are you still there? I didn't catch anything.");
-
-      disconnectTimer = setTimeout(() => {
-        if (!currentSession) return;
+      silenceTimer = setTimeout(() => {
+        if (!currentSession || isSpeaking) return;
         logger.warn(
           { sessionId: currentSession.sessionId },
-          "Silence timeout — terminating call",
+          "Silence detected — prompting user",
         );
-        void handleTTSResponse("I'll end the call now. Goodbye!")
-          .then(() =>
-            handleStop(currentSession!.callSid, currentSession!.streamSid),
-          )
-          .catch((err) =>
-            logger.error({ err }, "Error during silence disconnect"),
+        void handleTTSResponse("Are you still there? I didn't catch anything.");
+
+        disconnectTimer = setTimeout(() => {
+          if (!currentSession) return;
+          logger.warn(
+            { sessionId: currentSession.sessionId },
+            "Silence timeout — terminating call",
           );
-      }, SILENCE_DISCONNECT_MS);
-    }, SILENCE_PROMPT_MS);
-  }
+          void handleTTSResponse("I'll end the call now. Goodbye!")
+            .then(() =>
+              handleStop(currentSession!.callSid, currentSession!.streamSid),
+            )
+            .catch((err) =>
+              logger.error({ err }, "Error during silence disconnect"),
+            );
+        }, SILENCE_DISCONNECT_MS);
+      }, SILENCE_PROMPT_MS);
+    }
 
   async function handleTranscript(
     transcript: string,
@@ -170,140 +180,210 @@ export function createPipeline(wsSend: WebSocketSend, meetingContext?: MeetingCo
 
   const streamHandler = createStreamHandler({
     async onStart(callSid, streamSid, from, to) {
-      currentStreamSid = streamSid;
-
-      const sessionId = randomUUID();
-      const conversationId = randomUUID();
-
-      let userId: string;
-      let userName: string | undefined;
-      let userTimezone = "UTC";
-
       try {
-        const callRecord = await callRepository.findByCallSid(callSid);
-        if (callRecord) {
-          userId = callRecord.userId;
-          const userRecord = await userRepository.findById(userId);
-          if (userRecord) {
-            userName = userRecord.name;
-            userTimezone = userRecord.timezone;
+        currentStreamSid = streamSid;
+
+        const sessionId = randomUUID();
+        let conversationId = randomUUID();
+
+        let userId: string;
+        let userName: string | undefined;
+        let userTimezone = "UTC";
+        let ctx: unknown = { callType: "inbound" };
+        try {
+          const raw = await redisConnection.get(`call-context:${callSid}`);
+          if (raw) {
+            ctx = JSON.parse(raw);
           }
-        } else if (meetingContext?.userId) {
-          userId = meetingContext.userId;
-          const userRecord = await userRepository.findById(userId);
-          if (userRecord) {
-            userName = userRecord.name;
-            userTimezone = userRecord.timezone;
+        } catch (err) {
+          logger.warn({ err, callSid }, "Failed to read call context from Redis");
+        }
+
+        logger.info({ callSid, ctx }, "Pipeline onStart — context loaded");
+
+        try {
+          const callRecord = await callRepository.findByCallSid(callSid);
+          if (callRecord) {
+            userId = callRecord.userId;
+            const userRecord = await userRepository.findById(userId);
+            if (userRecord) {
+              userName = userRecord.name;
+              userTimezone = userRecord.timezone;
+            }
+          } else if (
+            (ctx as any)?.userId &&
+            typeof (ctx as any).userId === "string"
+          ) {
+            userId = (ctx as any).userId as string;
+            const userRecord = await userRepository.findById(userId);
+            if (userRecord) {
+              userName = userRecord.name;
+              userTimezone = userRecord.timezone;
+            }
+          } else if (meetingContext?.userId) {
+            userId = meetingContext.userId;
+            const userRecord = await userRepository.findById(userId);
+            if (userRecord) {
+              userName = userRecord.name;
+              userTimezone = userRecord.timezone;
+            }
+          } else {
+            logger.warn({ callSid }, "Call record not found — using fallback userId");
+            userId = callSid;
           }
-        } else {
-          logger.warn({ callSid }, "Call record not found — using fallback userId");
+
+          // Ensure outbound calls have a Conversation row (and use it as conversationId)
+          try {
+            let conversation = await prisma.conversation.findFirst({
+              where: { callId: callRecord?.id ?? undefined },
+            });
+
+            if (!conversation) {
+              const ctxUserId = (ctx as any)?.userId as string | undefined;
+              conversation = await prisma.conversation.create({
+                data: {
+                  userId: ctxUserId ?? userId,
+                  callId: callRecord?.id ?? null,
+                },
+              });
+              logger.info(
+                { conversationId: conversation.id, callSid },
+                "Created new conversation for outbound call",
+              );
+            }
+
+            conversationId = conversation.id as typeof conversationId;
+          } catch (err) {
+            logger.error({ err, callSid }, "Failed to find-or-create conversation for call");
+          }
+        } catch (err) {
+          logger.error({ err, callSid }, "Failed to look up user for call — using fallback");
           userId = callSid;
         }
-      } catch (err) {
-        logger.error({ err, callSid }, "Failed to look up user for call — using fallback");
-        userId = callSid;
-      }
 
-      const session: PipelineSession = {
-        sessionId,
-        userId,
-        callSid,
-        streamSid,
-        conversationId,
-        fromNumber: from,
-        toNumber: to,
-        createdAt: new Date().toISOString(),
-        lastActivityAt: new Date().toISOString(),
-        status: "active",
-      };
+        const session: PipelineSession = {
+          sessionId,
+          userId,
+          callSid,
+          streamSid,
+          conversationId,
+          fromNumber: from,
+          toNumber: to,
+          createdAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+          status: "active",
+        };
 
-      currentSession = session;
+        currentSession = session;
 
-      await setSession(sessionId, {
-        sessionId,
-        userId,
-        callSid,
-        conversationId,
-        messages: [],
-        createdAt: new Date().toISOString(),
-        lastActivityAt: new Date().toISOString(),
-        status: "active",
-      });
+        await setSession(sessionId, {
+          sessionId,
+          userId,
+          callSid,
+          conversationId,
+          messages: [],
+          createdAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+          status: "active",
+        });
 
-      await emit.sessionCreated({
-        sessionId,
-        userId,
-        callSid,
-        timestamp: new Date().toISOString(),
-      });
+        registerVoiceTtsHandler(sessionId, handleTTSResponse);
 
-      try {
-        activeCallsGauge.inc();
-      } catch (err) {
-        logger.error({ err }, "Failed to record active_calls metric");
-      }
+        await emit.sessionCreated({
+          sessionId,
+          userId,
+          callSid,
+          timestamp: new Date().toISOString(),
+        });
 
-      logger.info({ sessionId, callSid, userId, userName, userTimezone }, "Pipeline session started");
-
-      let greeting = "Hello! I'm xTanBot, your AI assistant. How can I help you today?";
-
-      if (meetingContext?.callType === "scheduled-meeting") {
-        greeting = `Hi ${meetingContext.attendeeName}! This is xTanBot calling about your "${meetingContext.meetingTitle}" meeting. How are you doing?`;
-      } else if (meetingContext?.callType === "daily-briefing") {
-        const count = meetingContext.meetingCount ?? 0;
-        const meetingWord = count === 1 ? "meeting" : "meetings";
-        greeting = `Good morning ${meetingContext.userName}! This is your xTanBot daily briefing. You have ${count} ${meetingWord} today. Would you like to review them or make any changes?`;
-      } else if (!meetingContext) {
-        const callerPhone = from;
-        if (callerPhone) {
-          try {
-            const contact = await prisma.contact.findFirst({
-              where: { phone: callerPhone, deletedAt: null },
-            });
-            if (contact) {
-              const upcomingMeeting = await prisma.meeting.findFirst({
-                where: {
-                  userId: contact.userId,
-                  attendees: { has: contact.email ?? "" },
-                  startTime: { gte: new Date() },
-                  status: { in: ["scheduled", "confirmed"] },
-                },
-                orderBy: { startTime: "asc" },
-              });
-              if (upcomingMeeting) {
-                const timeStr = new Date(upcomingMeeting.startTime).toLocaleTimeString("en-IN", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  hour12: true,
-                });
-                greeting = `Hi ${contact.name}! Great to hear from you. I see you have "${upcomingMeeting.title}" scheduled for ${timeStr}. Would you like to discuss that, or is there something else I can help with?`;
-              } else {
-                greeting = `Hi ${contact.name}! Great to hear from you. How can I help you today?`;
-              }
-            }
-          } catch (err) {
-            logger.error({ err }, "Failed to build smart inbound greeting");
-          }
+        try {
+          activeCallsGauge.inc();
+        } catch (err) {
+          logger.error({ err }, "Failed to record active_calls metric");
         }
-      } else if (userName) {
-        greeting = `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`;
+
+        logger.info(
+          { sessionId, callSid, userId, userName, userTimezone },
+          "Pipeline session started",
+        );
+
+        let greeting = "Hello! I'm xTanBot, your AI assistant. How can I help you today?";
+
+        const ctxCallType = (ctx as any)?.callType as string | undefined;
+        if (ctxCallType === "scheduled-meeting") {
+          const contactName =
+            ((ctx as any)?.contactName as string | undefined) ??
+            ((ctx as any)?.attendeeName as string | undefined);
+          const un =
+            ((ctx as any)?.userName as string | undefined) ?? userName;
+          greeting = `Hi, this is xTanBot calling on behalf of ${un ?? "the user"}. Am I speaking with ${contactName ?? "there"}?`;
+        } else if (ctxCallType === "daily-briefing") {
+          const name = (ctx as any)?.userName as string | undefined;
+          greeting = `Good morning ${name ?? "there"}! This is your xTanBot daily briefing.`;
+        } else if (
+          !meetingContext &&
+          ctxCallType !== "scheduled-meeting" &&
+          ctxCallType !== "daily-briefing"
+        ) {
+          const callerPhone = from;
+          if (callerPhone) {
+            try {
+              const contact = await prisma.contact.findFirst({
+                where: { phone: callerPhone, deletedAt: null },
+              });
+              if (contact) {
+                const upcomingMeeting = await prisma.meeting.findFirst({
+                  where: {
+                    userId: contact.userId,
+                    attendees: { has: contact.email ?? "" },
+                    startTime: { gte: new Date() },
+                    status: { in: ["scheduled", "confirmed"] },
+                  },
+                  orderBy: { startTime: "asc" },
+                });
+                if (upcomingMeeting) {
+                  const timeStr = new Date(
+                    upcomingMeeting.startTime,
+                  ).toLocaleTimeString("en-IN", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  });
+                  greeting = `Hi ${contact.name}! Great to hear from you. I see you have "${upcomingMeeting.title}" scheduled for ${timeStr}. Would you like to discuss that, or is there something else I can help with?`;
+                } else {
+                  greeting = `Hi ${contact.name}! Great to hear from you. How can I help you today?`;
+                }
+              }
+            } catch (err) {
+              logger.error({ err }, "Failed to build smart inbound greeting");
+            }
+          }
+        } else if (userName) {
+          greeting = `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`;
+        }
+
+        deepgramConnection = createDeepgramConnection(
+          async (result) => {
+            await handleTranscript(result.transcript, result.isFinal);
+          },
+          (newConn) => {
+            deepgramConnection = newConn;
+            logger.info(
+              { sessionId: currentSession?.sessionId },
+              "Deepgram connection reference updated after reconnect",
+            );
+          },
+        );
+
+        await handleTTSResponse(greeting);
+        resetSilenceTimer();
+      } catch (err) {
+        logger.error({ err, callSid }, "Pipeline init failed — closing gracefully");
+        if (wsClose) {
+          wsClose(1011, "Pipeline initialization error");
+        }
+        return;
       }
-
-      deepgramConnection = createDeepgramConnection(
-        async (result) => {
-          await handleTranscript(result.transcript, result.isFinal);
-        },
-        (newConn) => {
-          deepgramConnection = newConn;
-          logger.info(
-            { sessionId: currentSession?.sessionId },
-            "Deepgram connection reference updated after reconnect",
-          );
-        },
-      );
-
-      await handleTTSResponse(greeting);
-      resetSilenceTimer();
     },
 
     async onAudioChunk(chunk) {
@@ -358,6 +438,7 @@ export function createPipeline(wsSend: WebSocketSend, meetingContext?: MeetingCo
     logger.info({ callSid, streamSid }, "Pipeline session ending");
 
     if (currentSession) {
+      unregisterVoiceTtsHandler(currentSession.sessionId);
       await deleteSession(currentSession.sessionId);
 
       try {
@@ -386,4 +467,8 @@ export function createPipeline(wsSend: WebSocketSend, meetingContext?: MeetingCo
     handleMessage: streamHandler,
     handleTTSResponse,
   };
+  } catch (err) {
+    logger.error({ err }, "PIPELINE CRASH");
+    throw err;
+  }
 }

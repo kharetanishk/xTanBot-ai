@@ -1,6 +1,6 @@
 import { anthropicClient } from "./client";
 import { toolRouter } from "./tool-router";
-import { buildSystemPrompt } from "./prompt-builder";
+import { buildChatSystemPrompt } from "./prompt-builder";
 import { AgentError, type AgentErrorCategory } from "./errors";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
@@ -73,14 +73,79 @@ function selectModel(messages: Anthropic.MessageParam[]): string {
     : config.ANTHROPIC_MODEL;
 }
 
-const MAX_VOICE_SENTENCES = 3;
+const VOICE_MODEL = "claude-haiku-4-5-20251001" as const;
+const VOICE_MAX_TOKENS = 150;
 
-function truncateForVoice(text: string): string {
+function truncateToSentences(text: string, maxSentences: number): string {
   const sentences = text
     .split(/(?<=[.!?])\s+/)
     .filter((s) => s.trim().length > 0);
-  if (sentences.length <= MAX_VOICE_SENTENCES) return text;
-  return sentences.slice(0, MAX_VOICE_SENTENCES).join(" ").trim();
+  if (sentences.length <= maxSentences) return text;
+  return sentences.slice(0, maxSentences).join(" ").trim();
+}
+
+function strFromCtx(
+  v: Record<string, unknown> | undefined,
+  key: string,
+  fallback: string,
+): string {
+  if (!v) return fallback;
+  const x = v[key];
+  return typeof x === "string" && x.trim() !== "" ? x : fallback;
+}
+
+function buildVoiceSystemPrompt(ctx: AgentContext): string {
+  const v = ctx.voiceContext ?? {};
+  const userName =
+    ctx.userProfile?.name ??
+    strFromCtx(v, "userName", "the user");
+  const meetingTitle = strFromCtx(v, "meetingTitle", "");
+  const meetingTime = strFromCtx(v, "meetingTime", "");
+  const contactName =
+    strFromCtx(v, "contactName", strFromCtx(v, "attendeeName", "there"));
+  const answeredBy = strFromCtx(v, "answeredBy", "");
+
+  return `You are xTanBot, an AI voice assistant calling on behalf of ${userName}.
+This is a PHONE CALL. Keep every response under 2 sentences. Be natural, not robotic.
+
+Meeting context:
+- Title: ${meetingTitle}
+- Time: ${meetingTime}
+- Contact: ${contactName}
+- AnsweredBy (AMD): ${answeredBy || "unknown"}
+
+Call script:
+1. Open: "Hi, this is xTanBot calling on behalf of ${userName}. Am I speaking with ${contactName}?"
+   - If not them: ask to speak with them, if unavailable say goodbye and stop.
+2. Confirm: "I'm calling about ${meetingTitle}. Do you have 2 minutes?"
+   - If no: "No problem, I'll let ${userName} know. Goodbye." then stop.
+3. Ask (max 3 questions, one at a time):
+   - "What's your current status on this?"
+   - "Any blockers or decisions needed?"
+   - "Do you need a follow-up?"
+4. Confirm back: "So to confirm — [summarise their answers]. Is that right?"
+5. Close: "Great, I'll pass this to ${userName}. Thanks, goodbye!"
+
+If you detect voicemail (context.answeredBy contains 'machine'):
+Say ONLY: "Hi, xTanBot calling for ${userName} re: ${meetingTitle}. Please call back. Thanks." then stop.
+
+If they say do not contact: "Understood, you won't be contacted again. Goodbye." then stop.
+
+Rules:
+- Max 2 sentences per response
+- Never promise anything on behalf of ${userName}
+- Never go off-topic`.trim();
+}
+
+function buildSystemPromptForAgent(ctx: AgentContext): string {
+  if (ctx.callSid) {
+    return buildVoiceSystemPrompt(ctx);
+  }
+  return buildChatSystemPrompt(ctx);
+}
+
+function truncateForVoice(text: string): string {
+  return truncateToSentences(text, 2);
 }
 
 function extractTextFromResponse(
@@ -105,12 +170,16 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
   let totalOutputTokens = 0;
   let iterations = 0;
 
-  const selectedModel = selectModel(ctx.messages);
+  const isVoice = Boolean(ctx.callSid);
+  const selectedModel = isVoice ? VOICE_MODEL : selectModel(ctx.messages);
+  const maxTokens = isVoice ? VOICE_MAX_TOKENS : config.ANTHROPIC_MAX_TOKENS;
+
   logger.debug(
     {
       sessionId: ctx.sessionId,
       selectedModel,
       messageCount: ctx.messages.length,
+      isVoice,
     },
     "Model selected for agent turn",
   );
@@ -128,12 +197,16 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       response = (await withTimeout(
         anthropicClient.messages.create({
           model: selectedModel,
-          system: buildSystemPrompt(ctx),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          tools: toolRouter.getDefinitions() as any,
-          tool_choice: { type: "auto" },
+          system: buildSystemPromptForAgent(ctx),
+          ...(isVoice
+            ? {}
+            : {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                tools: toolRouter.getDefinitions() as any,
+                tool_choice: { type: "auto" as const },
+              }),
           messages,
-          max_tokens: config.ANTHROPIC_MAX_TOKENS,
+          max_tokens: maxTokens,
         }),
         config.ANTHROPIC_TIMEOUT_MS,
         "LLM call",
@@ -155,7 +228,9 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
         response.content as Array<{ type: string; text?: string }>,
       );
 
-      const truncatedText = truncateForVoice(text);
+      const truncatedText = isVoice
+        ? truncateForVoice(text)
+        : truncateToSentences(text, 3);
 
       if (truncatedText !== text) {
         logger.info(
@@ -164,7 +239,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
             originalLength: text.length,
             truncatedLength: truncatedText.length,
           },
-          "Voice response truncated to sentence limit",
+          "Response truncated to sentence limit",
         );
       }
 

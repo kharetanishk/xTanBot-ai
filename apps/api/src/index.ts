@@ -5,6 +5,8 @@ import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { FastifyAdapter } from "@bull-board/fastify";
 import { createLogger } from "@xtanbot/logger";
+import { subscribeToEvent } from "@xtanbot/events";
+import { playAgentVoiceResponse } from "@xtanbot/voice-pipeline";
 import { config } from "@xtanbot/config";
 import { collectMetrics, metricsContentType } from "@xtanbot/observability";
 import {
@@ -43,6 +45,23 @@ async function bootstrap(): Promise<void> {
     trustProxy: true,
     genReqId: () => randomUUID(),
   });
+
+  // Twilio webhooks send application/x-www-form-urlencoded bodies.
+  // Parse them into a key/value object so routes can read request.body.CallSid, etc.
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      try {
+        const parsed = Object.fromEntries(
+          new URLSearchParams(body as string),
+        ) as Record<string, string>;
+        done(null, parsed);
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
 
   await registerPlugins(app);
 
@@ -157,6 +176,16 @@ async function bootstrap(): Promise<void> {
     { port: serverConfig.port, host: serverConfig.host },
     "API server started",
   );
+
+  subscribeToEvent("agent.responded", async (event) => {
+    if (event.type !== "agent.responded") return;
+    const sessionId =
+      typeof event.sessionId === "string" ? event.sessionId : "";
+    const text = typeof event.text === "string" ? event.text : "";
+    if (!sessionId || !text) return;
+    await playAgentVoiceResponse(sessionId, text);
+  });
+  logger.info("Subscribed to agent.responded for voice TTS playback");
 
   const shutdown = async (signal: string, exitCode: number): Promise<void> => {
     logger.info({ signal }, "Shutting down API server...");

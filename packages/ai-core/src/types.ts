@@ -8,6 +8,8 @@ export type AgentContext = {
   readonly userId: string;
   readonly callSid?: string;
   readonly messages: AgentMessage[];
+  /** Voice call: merged from Redis `session:context:${callSid}` + Twilio AnsweredBy */
+  readonly voiceContext?: Record<string, unknown>;
   readonly userProfile?: {
     name: string;
     timezone: string;

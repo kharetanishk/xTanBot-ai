@@ -39,3 +39,4 @@ yarn-error.log*
 
 .expo
 apps/mobile/package-lock.json
+docs/ 

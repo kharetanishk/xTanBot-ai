@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { WebSocket } from "ws";
+import fp from "fastify-plugin";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
+import { redisConnection } from "@xtanbot/redis";
 import {
   validateTwilioSignature,
   buildInboundCallTwiML,
@@ -24,7 +26,10 @@ function guardTwilioSignature(
   const signature = request.headers["x-twilio-signature"];
 
   if (!signature || typeof signature !== "string" || signature.trim() === "") {
-    logger.warn({ ip: request.ip }, "Missing Twilio signature — request rejected");
+    logger.warn(
+      { ip: request.ip },
+      "Missing Twilio signature — request rejected",
+    );
     return false;
   }
 
@@ -36,14 +41,19 @@ function guardTwilioSignature(
   );
 
   if (!isValid) {
-    logger.warn({ url, ip: request.ip }, "Invalid Twilio signature — request rejected");
+    logger.warn(
+      { url, ip: request.ip },
+      "Invalid Twilio signature — request rejected",
+    );
     return false;
   }
 
   return true;
 }
 
-export async function twilioRoutes(app: FastifyInstance): Promise<void> {
+export const twilioRoutes = fp(async function twilioRoutes(
+  app: FastifyInstance,
+): Promise<void> {
   // POST /twilio/voice — Twilio calls this when a call comes in or for outbound calls
   app.post(
     "/twilio/voice",
@@ -57,18 +67,60 @@ export async function twilioRoutes(app: FastifyInstance): Promise<void> {
         const host = request.hostname;
         const streamUrl = getStreamWebSocketUrl(host);
 
-        const contextParam = (request.query as Record<string, unknown> | undefined)
-          ?.context;
+        const query = (request.query ?? {}) as Record<string, string>;
+        const contextRaw = query.context;
         let meetingContext: unknown = null;
-        if (typeof contextParam === "string") {
+        if (typeof contextRaw === "string" && contextRaw.trim() !== "") {
           try {
-            meetingContext = JSON.parse(decodeURIComponent(contextParam));
+            meetingContext = JSON.parse(decodeURIComponent(contextRaw));
           } catch {
             // ignore malformed context
           }
         }
 
-        const twiml = buildInboundCallTwiML(streamUrl, meetingContext);
+        const body = (request.body ?? {}) as Record<string, string>;
+        const callSid = body.CallSid as string | undefined;
+        const answeredBy = body.AnsweredBy;
+
+        let enriched: Record<string, unknown> =
+          meetingContext &&
+          typeof meetingContext === "object" &&
+          meetingContext !== null &&
+          !Array.isArray(meetingContext)
+            ? { ...(meetingContext as Record<string, unknown>) }
+            : { callType: "inbound" };
+        if (answeredBy && String(answeredBy).trim() !== "") {
+          enriched = { ...enriched, answeredBy: String(answeredBy) };
+        }
+
+        logger.info(
+          {
+            callSid,
+            contextRaw,
+            contextParsed: meetingContext,
+            answeredBy,
+            host,
+            streamUrl,
+          },
+          "twilio/voice hit",
+        );
+        if (callSid) {
+          const json = JSON.stringify(enriched);
+          await redisConnection.set(
+            `call-context:${callSid}`,
+            json,
+            "EX",
+            3600,
+          );
+          await redisConnection.set(
+            `session:context:${callSid}`,
+            json,
+            "EX",
+            3600,
+          );
+        }
+
+        const twiml = buildInboundCallTwiML(streamUrl, enriched);
 
         logger.info({ host, streamUrl }, "Call — returning TwiML");
 
@@ -131,24 +183,34 @@ export async function twilioRoutes(app: FastifyInstance): Promise<void> {
 
   // WS /twilio/stream — Twilio media stream WebSocket
   app.get("/twilio/stream", { websocket: true }, (socket: WebSocket) => {
-    logger.info("Twilio WebSocket stream connected");
-
-    const pipeline = createPipeline((data: string) => {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(data);
-      }
-    });
-
-    socket.on("message", async (rawMessage: Buffer) => {
-      await pipeline.handleMessage(rawMessage.toString());
-    });
-
-    socket.on("close", () => {
-      logger.info("Twilio WebSocket stream disconnected");
-    });
-
+    // MUST be first to catch handshake/early errors
     socket.on("error", (err: Error) => {
-      logger.error({ err }, "Twilio WebSocket error");
+      logger.error({ err }, "WebSocket error");
     });
+
+    logger.info("WebSocket /twilio/stream connected");
+
+    try {
+      const pipeline = createPipeline(
+        (data: string) => {
+          if (socket.readyState === socket.OPEN) {
+            socket.send(data);
+          }
+        },
+        null,
+        (code: number, reason: string) => socket.close(code, reason),
+      );
+
+      socket.on("message", async (rawMessage: Buffer) => {
+        await pipeline.handleMessage(rawMessage.toString());
+      });
+
+      socket.on("close", () => {
+        logger.info("Twilio WebSocket stream disconnected");
+      });
+    } catch (err) {
+      logger.error({ err }, "WebSocket handler crashed");
+      socket.close(1011, "internal error");
+    }
   });
-}
+});

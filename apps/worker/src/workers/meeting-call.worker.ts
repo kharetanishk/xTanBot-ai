@@ -101,11 +101,18 @@ export function createMeetingCallWorker(): Worker {
 
         for (const { name, phone } of phonesToCall) {
           try {
+            const meetingTime = new Date(meeting.startTime).toLocaleString(
+              undefined,
+              { dateStyle: "medium", timeStyle: "short" },
+            );
             const context = encodeURIComponent(
               JSON.stringify({
                 meetingId,
                 meetingTitle: title,
+                meetingTime,
+                contactName: name,
                 attendeeName: name,
+                userName: user.name,
                 userId,
                 callType: "scheduled-meeting" as const,
               }),
@@ -117,6 +124,8 @@ export function createMeetingCallWorker(): Worker {
               url: `${config.API_URL}/twilio/voice?context=${context}`,
               statusCallback: `${config.API_URL}/twilio/status`,
               statusCallbackMethod: "POST",
+              machineDetection: "Enable",
+              machineDetectionTimeout: 30,
             });
 
             await prisma.call.create({
@@ -282,6 +291,10 @@ export function createMeetingCallWorker(): Worker {
               to: user.phone,
               from: config.TWILIO_PHONE_NUMBER,
               url: `${config.API_URL}/twilio/voice?context=${context}`,
+              statusCallback: `${config.API_URL}/twilio/status`,
+              statusCallbackMethod: "POST",
+              machineDetection: "Enable",
+              machineDetectionTimeout: 30,
             });
 
             logger.info(

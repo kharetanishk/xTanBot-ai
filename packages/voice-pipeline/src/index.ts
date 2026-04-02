@@ -26,3 +26,8 @@ export type {
   AudioChunk,
 } from "./types";
 export type { WebSocketSend } from "./pipeline";
+export {
+  registerVoiceTtsHandler,
+  unregisterVoiceTtsHandler,
+  playAgentVoiceResponse,
+} from "./voice-session-registry";
