@@ -11,11 +11,12 @@ export function buildInboundCallTwiML(
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Connect>
+  <Start>
     <Stream url="${streamUrl}">
       <Parameter name="direction" value="inbound"/>
     </Stream>
-  </Connect>
+  </Start>
+  <Pause length="600"/>
 </Response>`.trim();
 }
 
@@ -24,11 +25,12 @@ export function buildOutboundCallTwiML(streamUrl: string): string {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Connect>
+  <Start>
     <Stream url="${streamUrl}">
       <Parameter name="direction" value="outbound"/>
     </Stream>
-  </Connect>
+  </Start>
+  <Pause length="600"/>
 </Response>`.trim();
 }
 

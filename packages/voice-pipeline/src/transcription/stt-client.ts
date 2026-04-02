@@ -43,26 +43,30 @@ export function createDeepgramConnection(
   });
 
   connection.on("Results", async (data: unknown) => {
-    const result = data as {
-      channel?: {
-        alternatives?: Array<{
-          transcript: string;
-          confidence: number;
-        }>;
+    try {
+      const result = data as {
+        channel?: {
+          alternatives?: Array<{
+            transcript: string;
+            confidence: number;
+          }>;
+        };
+        is_final?: boolean;
       };
-      is_final?: boolean;
-    };
 
-    const transcript = result.channel?.alternatives?.[0]?.transcript;
-    const confidence = result.channel?.alternatives?.[0]?.confidence ?? 0;
-    const isFinal = result.is_final ?? false;
+      const transcript = result.channel?.alternatives?.[0]?.transcript;
+      const confidence = result.channel?.alternatives?.[0]?.confidence ?? 0;
+      const isFinal = result.is_final ?? false;
 
-    if (transcript && transcript.trim().length > 0) {
-      await onTranscript({
-        transcript: transcript.trim(),
-        isFinal,
-        confidence,
-      });
+      if (transcript && transcript.trim().length > 0) {
+        await onTranscript({
+          transcript: transcript.trim(),
+          isFinal,
+          confidence,
+        });
+      }
+    } catch (err) {
+      logger.error({ err }, "Deepgram Results handler failed");
     }
   });
 

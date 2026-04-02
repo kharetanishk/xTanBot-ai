@@ -202,7 +202,11 @@ export const twilioRoutes = fp(async function twilioRoutes(
       );
 
       socket.on("message", async (rawMessage: Buffer) => {
-        await pipeline.handleMessage(rawMessage.toString());
+        try {
+          await pipeline.handleMessage(rawMessage.toString());
+        } catch (err) {
+          logger.error({ err }, "Twilio stream message handler failed");
+        }
       });
 
       socket.on("close", () => {

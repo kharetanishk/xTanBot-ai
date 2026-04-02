@@ -28,6 +28,8 @@ export async function streamTextToSpeech(
       model_id: config.ELEVENLABS_MODEL_ID,
       text,
       stream: true,
+      // Twilio Media Streams expect 8kHz μ-law (PCMU); default MP3/PCM breaks playback / may reset the WS.
+      output_format: "ulaw_8000",
     });
 
     for await (const chunk of audioStream as AsyncIterable<Buffer>) {
@@ -57,6 +59,7 @@ export async function textToSpeechBuffer(
     model_id: config.ELEVENLABS_MODEL_ID,
     text,
     stream: true,
+    output_format: "ulaw_8000",
   });
 
   for await (const chunk of audioStream as AsyncIterable<Buffer>) {
