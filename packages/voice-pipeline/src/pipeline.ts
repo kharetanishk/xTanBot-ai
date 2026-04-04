@@ -55,6 +55,25 @@ function stripFillerWords(transcript: string): string {
   return result.replace(/\s+/g, " ").trim();
 }
 
+/** μ-law frame energy: silence/comfort-noise stays near one code; speech varies more. */
+function mulawPayloadLooksLikeSpeech(
+  base64Payload: string,
+  minVariance = 72,
+): boolean {
+  const buf = Buffer.from(base64Payload, "base64");
+  if (buf.length < 32) return false;
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i]!;
+  const mean = sum / buf.length;
+  let varAcc = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const d = buf[i]! - mean;
+    varAcc += d * d;
+  }
+  const variance = varAcc / buf.length;
+  return variance >= minVariance;
+}
+
 export type WebSocketSend = (data: string) => void;
 export type WebSocketClose = (code: number, reason: string) => void;
 
@@ -89,6 +108,11 @@ export function createPipeline(
     const MIN_TRANSCRIPT_LENGTH = 2;
     /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
     let hasBufferedOutboundMedia = false;
+    /** Ignore barge-in right after TTS starts (echo / line noise clears the whole reply). */
+    let bargeInGraceUntil = 0;
+    let consecutiveLoudInboundChunks = 0;
+    const BARGE_IN_GRACE_MS = 750;
+    const BARGE_IN_LOUD_CHUNKS_REQUIRED = 4;
 
     function resetSilenceTimer(): void {
       if (silenceTimer) {
@@ -179,11 +203,14 @@ export function createPipeline(
 
   async function handleTTSResponse(text: string): Promise<void> {
     isSpeaking = true;
+    consecutiveLoudInboundChunks = 0;
 
     if (!currentStreamSid) {
       isSpeaking = false;
       return;
     }
+
+    bargeInGraceUntil = Date.now() + BARGE_IN_GRACE_MS;
 
     logger.debug({ textLength: text.length }, "Streaming TTS to Twilio");
 
@@ -419,17 +446,31 @@ export function createPipeline(
       const fromCallee = chunk.track !== "outbound";
 
       if (bargeInAllowed && isSpeaking && currentStreamSid && fromCallee) {
-        isSpeaking = false;
-        wsSend(buildTwilioClearMessage(currentStreamSid));
-        logger.info(
-          { sessionId: currentSession?.sessionId },
-          "Barge-in detected — interrupting AI speech",
-        );
-        try {
-          bargeInTotal.inc();
-        } catch (err) {
-          logger.error({ err }, "Failed to record barge_in_total metric");
+        const pastGrace = Date.now() >= bargeInGraceUntil;
+        const loud = mulawPayloadLooksLikeSpeech(chunk.payload);
+        if (!pastGrace) {
+          consecutiveLoudInboundChunks = 0;
+        } else if (!loud) {
+          consecutiveLoudInboundChunks = 0;
+        } else {
+          consecutiveLoudInboundChunks += 1;
+          if (consecutiveLoudInboundChunks >= BARGE_IN_LOUD_CHUNKS_REQUIRED) {
+            consecutiveLoudInboundChunks = 0;
+            isSpeaking = false;
+            wsSend(buildTwilioClearMessage(currentStreamSid));
+            logger.info(
+              { sessionId: currentSession?.sessionId },
+              "Barge-in — user speech during AI playback (after grace + sustained level)",
+            );
+            try {
+              bargeInTotal.inc();
+            } catch (err) {
+              logger.error({ err }, "Failed to record barge_in_total metric");
+            }
+          }
         }
+      } else {
+        consecutiveLoudInboundChunks = 0;
       }
 
       if (!currentSession) return;
