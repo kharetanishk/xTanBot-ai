@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,20 +8,67 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthStore } from "../../../src/stores/auth.store";
 import { sendMessage } from "../../../src/api/conversations.api";
-import MessageBubble from "../../../src/components/chat/MessageBubble";
-import TypingIndicator from "../../../src/components/chat/TypingIndicator";
-import SuggestedPrompt from "../../../src/components/chat/SuggestedPrompt";
 import type { Message } from "../../../src/types/api.types";
 
 const SUGGESTED = [
-  "Schedule a meeting tomorrow at 2pm",
-  "Who are my contacts at Acme Corp?",
-  "Show my upcoming meetings",
-  "Call John Smith",
+  "Who are my contacts?",
+  "Schedule a meeting",
+  "What time is it?",
 ];
+
+function TypingDots() {
+  const a1 = useRef(new Animated.Value(0.3)).current;
+  const a2 = useRef(new Animated.Value(0.3)).current;
+  const a3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const mk = (v: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(v, {
+            toValue: 1,
+            duration: 400,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(v, {
+            toValue: 0.3,
+            duration: 400,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+    const l1 = mk(a1, 0);
+    const l2 = mk(a2, 150);
+    const l3 = mk(a3, 300);
+    l1.start();
+    l2.start();
+    l3.start();
+    return () => {
+      l1.stop();
+      l2.stop();
+      l3.stop();
+    };
+  }, [a1, a2, a3]);
+
+  return (
+    <View style={styles.typingBubble}>
+      <View style={styles.typingRow}>
+        <Animated.Text style={[styles.typingDot, { opacity: a1 }]}>●</Animated.Text>
+        <Animated.Text style={[styles.typingDot, { opacity: a2 }]}>●</Animated.Text>
+        <Animated.Text style={[styles.typingDot, { opacity: a3 }]}>●</Animated.Text>
+      </View>
+    </View>
+  );
+}
 
 export default function ChatScreen() {
   const token = useAuthStore((s) => s.token);
@@ -29,6 +76,7 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const listRef = useRef<FlatList<Message>>(null);
 
   const handleSend = useCallback(async () => {
     const content = inputText.trim();
@@ -85,179 +133,315 @@ export default function ChatScreen() {
     });
   }, [inputText, isStreaming, token, conversationId]);
 
-  const handleSuggested = (text: string) => {
-    setInputText(text);
-  };
+  const renderMessage = useCallback(
+    ({ item }: { item: Message }) => {
+      const isUser = item.role === "user";
+      const isStreamingRow = item.id === "streaming";
+      const showTyping =
+        isStreamingRow && isStreaming && (!item.content || item.content === "");
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={100}
-    >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>xTanBot AI</Text>
-        <Text style={styles.headerSubtitle}>
-          Ask me anything — schedule meetings, find contacts
-        </Text>
-        <View style={styles.onlineRow}>
-          <View style={styles.onlineDot} />
-          <Text style={styles.onlineText}>Online</Text>
-        </View>
-      </View>
-
-      {messages.length === 0 ? (
-        <View style={styles.empty}>
-          <View style={styles.promptsWrap}>
-            {SUGGESTED.map((text) => (
-              <SuggestedPrompt
-                key={text}
-                text={text}
-                onPress={() => handleSuggested(text)}
-              />
-            ))}
-          </View>
-        </View>
-      ) : (
-        <FlatList
-          data={[...messages].reverse()}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <MessageBubble
-              message={item}
-              isStreaming={item.id === "streaming"}
-            />
-          )}
-          ListFooterComponent={isStreaming ? <TypingIndicator /> : null}
-          inverted
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-        />
-      )}
-
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Type a message..."
-          placeholderTextColor="#6b7280"
-          multiline
-          maxLength={2000}
-          editable={!isStreaming}
-        />
-        <Pressable
-          onPress={handleSend}
-          disabled={!inputText.trim() || isStreaming}
+      return (
+        <View
           style={[
-            styles.sendButton,
-            (!inputText.trim() || isStreaming) && styles.sendDisabled,
+            styles.msgRow,
+            isUser ? styles.msgRowRight : styles.msgRowLeft,
           ]}
         >
-          <Text style={styles.sendText}>→</Text>
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          <View
+            style={[
+              styles.bubble,
+              isUser ? styles.bubbleUser : styles.bubbleAi,
+            ]}
+          >
+            {showTyping ? (
+              <TypingDots />
+            ) : (
+              <Text style={isUser ? styles.textUser : styles.textAi}>
+                {item.content}
+                {isStreamingRow && isStreaming && item.content ? "▊" : ""}
+              </Text>
+            )}
+          </View>
+          <Text
+            style={[
+              styles.ts,
+              isUser ? styles.tsRight : styles.tsLeft,
+            ]}
+          >
+            {new Date(item.createdAt).toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </Text>
+        </View>
+      );
+    },
+    [isStreaming],
+  );
+
+  const canSend = Boolean(inputText.trim()) && !isStreaming;
+
+  return (
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerBrand}>xTanBot AI</Text>
+          <View style={styles.headerOnline}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineLabel}>Online</Text>
+          </View>
+        </View>
+
+        {messages.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyBolt}>⚡</Text>
+            <Text style={styles.emptyTitle}>xTanBot AI</Text>
+            <Text style={styles.emptySub}>Ask me anything</Text>
+            {SUGGESTED.map((text) => (
+              <Pressable
+                key={text}
+                style={styles.chip}
+                onPress={() => setInputText(text)}
+              >
+                <Text style={styles.chipText}>{text}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+            inverted={false}
+            onContentSizeChange={() =>
+              listRef.current?.scrollToEnd({ animated: true })
+            }
+            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+          />
+        )}
+
+        <View style={styles.inputBar}>
+          <TextInput
+            style={styles.input}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Message xTanBot..."
+            placeholderTextColor="#555"
+            multiline
+            maxLength={2000}
+            editable={!isStreaming}
+          />
+          <Pressable
+            onPress={handleSend}
+            disabled={!canSend}
+            style={[
+              styles.sendBtn,
+              !canSend && styles.sendBtnDisabled,
+            ]}
+          >
+            <Text style={styles.sendArrow}>→</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  safe: {
     flex: 1,
     backgroundColor: "#0a0a0a",
-    paddingTop: 56,
+  },
+  flex: {
+    flex: 1,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    height: 60,
+    backgroundColor: "#111111",
     borderBottomWidth: 2,
-    borderBottomColor: "#222",
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#ffffff",
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: "#6b7280",
-    marginTop: 4,
-  },
-  onlineRow: {
+    borderBottomColor: "#FBBF24",
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    justifyContent: "space-between",
+  },
+  headerBrand: {
+    color: "#FBBF24",
+    fontWeight: "900",
+    fontSize: 18,
+  },
+  headerOnline: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   onlineDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#22c55e",
+    backgroundColor: "#10B981",
   },
-  onlineText: {
-    fontSize: 12,
-    color: "#22c55e",
-    fontWeight: "700",
-  },
-  empty: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-  promptsWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  onlineLabel: {
+    color: "#10B981",
+    fontSize: 13,
+    fontWeight: "600",
   },
   list: {
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingBottom: 24,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    padding: 12,
-    paddingBottom: 24,
-    backgroundColor: "#0a0a0a",
-    borderTopWidth: 2,
-    borderTopColor: "#222",
-    gap: 8,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000",
-    borderRadius: 0,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 16,
-    color: "#000",
-    maxHeight: 100,
+    paddingBottom: 8,
   },
-  sendButton: {
-    backgroundColor: "#FBBF24",
-    borderWidth: 3,
-    borderColor: "#000",
+  msgRow: {
+    marginBottom: 4,
+    maxWidth: "100%",
+  },
+  msgRowRight: {
+    alignSelf: "flex-end",
+    alignItems: "flex-end",
+  },
+  msgRowLeft: {
+    alignSelf: "flex-start",
+    alignItems: "flex-start",
+  },
+  bubble: {
+    maxWidth: "75%",
+    padding: 12,
+    marginBottom: 8,
     borderRadius: 0,
-    width: 48,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#000",
     shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
     shadowOpacity: 1,
     shadowRadius: 0,
     elevation: 3,
   },
-  sendDisabled: {
-    opacity: 0.5,
+  bubbleUser: {
+    backgroundColor: "#FBBF24",
+    alignSelf: "flex-end",
   },
-  sendText: {
+  bubbleAi: {
+    backgroundColor: "#ffffff",
+    alignSelf: "flex-start",
+  },
+  textUser: {
+    color: "#000",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  textAi: {
+    color: "#000",
+    fontWeight: "500",
+    fontSize: 15,
+  },
+  ts: {
+    fontSize: 11,
+    color: "#666",
+    marginBottom: 4,
+  },
+  tsRight: {
+    alignSelf: "flex-end",
+  },
+  tsLeft: {
+    alignSelf: "flex-start",
+  },
+  typingBubble: {
+    minHeight: 20,
+    justifyContent: "center",
+  },
+  typingRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  typingDot: {
+    fontSize: 14,
+    color: "#000",
+  },
+  emptyWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  emptyBolt: {
+    fontSize: 48,
+  },
+  emptyTitle: {
+    color: "#FBBF24",
+    fontWeight: "900",
+    fontSize: 24,
+    marginTop: 12,
+  },
+  emptySub: {
+    color: "#666",
+    fontSize: 15,
+    marginTop: 8,
+  },
+  chip: {
+    marginTop: 8,
+    backgroundColor: "#1a1a1a",
+    borderWidth: 2,
+    borderColor: "#333",
+    padding: 10,
+    alignSelf: "stretch",
+    maxWidth: 320,
+  },
+  chipText: {
+    color: "#FBBF24",
+    fontWeight: "700",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    backgroundColor: "#111111",
+    borderTopWidth: 2,
+    borderTopColor: "#222222",
+    padding: 12,
+    gap: 8,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: "#1a1a1a",
+    borderWidth: 2,
+    borderColor: "#333",
+    borderRadius: 0,
+    color: "#ffffff",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    maxHeight: 100,
+  },
+  sendBtn: {
+    backgroundColor: "#FBBF24",
+    borderWidth: 2,
+    borderColor: "#000",
+    width: 44,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    shadowColor: "#000",
+    elevation: 3,
+  },
+  sendBtnDisabled: {
+    backgroundColor: "#333",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sendArrow: {
     fontSize: 20,
     fontWeight: "900",
     color: "#000",

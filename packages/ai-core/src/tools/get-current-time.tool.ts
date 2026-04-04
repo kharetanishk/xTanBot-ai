@@ -5,7 +5,7 @@ import type { ToolDefinition, ClaudeToolDef } from "../types";
 const logger = createLogger("GetCurrentTimeTool");
 
 const inputSchema = z.object({
-  timezone: z.string().optional().default("UTC"),
+  timezone: z.string().optional().default("Asia/Kolkata"),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -28,7 +28,7 @@ export const getCurrentTimeTool: ToolDefinition<Input, Output> = {
     logger.debug({ timezone: input.timezone }, "Getting current time");
 
     const now = new Date();
-    const currentTime = now.toLocaleString("en-US", {
+    const currentTime = now.toLocaleString("en-IN", {
       timeZone: input.timezone,
       dateStyle: "full",
       timeStyle: "long",

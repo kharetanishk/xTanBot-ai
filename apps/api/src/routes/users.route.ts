@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireAuth } from "../middleware/auth.middleware";
 import { userService } from "../services/user.service";
-import { CreateUserSchema } from "@xtanbot/zod-schemas";
+import { CreateUserSchema, UpdateUserSchema } from "@xtanbot/zod-schemas";
 import { createLogger } from "@xtanbot/logger";
 
 const logger = createLogger("UsersRoute");
@@ -46,4 +46,32 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send(user);
   });
+
+  app.patch(
+    "/users/me",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const { userId } = request.user;
+      const raw = UpdateUserSchema.parse(request.body);
+      const data: {
+        name?: string;
+        timezone?: string;
+        phone?: string | null;
+      } = {};
+      if (raw.name !== undefined) data.name = raw.name;
+      if (raw.timezone !== undefined) data.timezone = raw.timezone;
+      if (raw.phone !== undefined) {
+        data.phone = raw.phone === "" ? null : raw.phone;
+      }
+      if (Object.keys(data).length === 0) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "No fields to update",
+        });
+      }
+      const user = await userService.update(userId, data);
+      return reply.send(user);
+    },
+  );
 }

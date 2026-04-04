@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { User } from "../types/api.types";
-import { TOKEN_STORAGE_KEY } from "../constants/config";
+import { API_BASE_URL, TOKEN_STORAGE_KEY } from "../constants/config";
 
 async function saveToken(token: string): Promise<void> {
   if (Platform.OS === "web") {
@@ -20,7 +20,7 @@ async function removeToken(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
 }
 
-async function loadToken(): Promise<string | null> {
+async function readTokenFromStorage(): Promise<string | null> {
   if (Platform.OS === "web") {
     return localStorage.getItem(TOKEN_STORAGE_KEY);
   }
@@ -55,8 +55,35 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   loadToken: async () => {
     try {
-      const token = await loadToken();
-      set({ token, isLoading: false, isAuthenticated: !!token });
+      const token = await readTokenFromStorage();
+      if (!token) {
+        set({
+          token: null,
+          user: null,
+          isLoading: false,
+          isAuthenticated: false,
+        });
+        return;
+      }
+      set({ token, isLoading: false, isAuthenticated: true });
+      try {
+        const res = await fetch(`${API_BASE_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const user = (await res.json()) as User;
+          set({ user });
+        } else if (res.status === 401) {
+          await removeToken();
+          set({
+            token: null,
+            user: null,
+            isAuthenticated: false,
+          });
+        }
+      } catch {
+        // Network error — keep token; user may stay null until useMe succeeds
+      }
     } catch {
       set({ isLoading: false, isAuthenticated: false });
     }

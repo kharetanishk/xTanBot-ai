@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
-import { useAuthStore } from "@stores/auth.store";
+import { useAuthStore } from "../src/stores/auth.store";
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -7,10 +7,14 @@ export const CreateUserSchema = z.object({
     .string()
     .regex(/^\+[1-9]\d{1,14}$/, "Must be E.164 format e.g. +1234567890")
     .optional(),
-  timezone: z.string().default("UTC"),
+  timezone: z.string().default("Asia/Kolkata"),
 });
 
-export const UpdateUserSchema = CreateUserSchema.partial();
+export const UpdateUserSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  phone: z.string().optional().nullable(),
+  timezone: z.string().optional(),
+});
 
 export const UserSchema = z.object({
   id: z.string().uuid(),

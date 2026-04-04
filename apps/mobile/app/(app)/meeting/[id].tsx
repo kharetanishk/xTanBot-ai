@@ -8,7 +8,11 @@ import {
   Alert,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { useMeeting, useCancelMeeting } from "../../../src/hooks/useMeetings";
+import {
+  useMeeting,
+  useCancelMeeting,
+  useMeetingSummary,
+} from "../../../src/hooks/useMeetings";
 import { formatDate, formatTime, formatDuration } from "../../../src/utils/date.utils";
 import MeetingStatusBadge from "../../../src/components/meetings/MeetingStatusBadge";
 import AttendeeChip from "../../../src/components/meetings/AttendeeChip";
@@ -22,6 +26,9 @@ export default function MeetingDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: meeting, isLoading } = useMeeting(id ?? "");
+  const { data: summaryData, isLoading: summaryLoading } = useMeetingSummary(
+    id ?? "",
+  );
   const cancelMeeting = useCancelMeeting(id ?? "");
 
   const canCancel =
@@ -108,6 +115,67 @@ export default function MeetingDetailScreen() {
         </View>
       </View>
 
+      <View style={[styles.card, { marginTop: 16 }]}>
+        <Text style={styles.cardTitle}>CALL SUMMARY</Text>
+
+        {summaryLoading ? (
+          <View style={styles.skeleton} />
+        ) : !summaryData?.hasSummary ? (
+          <View style={styles.emptySummary}>
+            <Text style={styles.emptySummaryEmoji}>📋</Text>
+            <Text style={styles.emptySummaryTitle}>NO SUMMARY YET</Text>
+            <Text style={styles.emptySummaryText}>
+              Summary will appear here after the AI completes the meeting call.
+            </Text>
+          </View>
+        ) : (
+          <View>
+            <View style={styles.summaryBox}>
+              <Text style={styles.summaryText}>{summaryData.summary}</Text>
+            </View>
+
+            {summaryData.callDuration != null ? (
+              <View style={styles.statsRow}>
+                <View style={styles.statChip}>
+                  <Text style={styles.statChipLabel}>DURATION</Text>
+                  <Text style={styles.statChipValue}>
+                    {formatDuration(summaryData.callDuration)}
+                  </Text>
+                </View>
+                <View style={styles.statChip}>
+                  <Text style={styles.statChipLabel}>STATUS</Text>
+                  <Text style={styles.statChipValue}>
+                    {(summaryData.callStatus ?? "").toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
+            {summaryData.transcript.length > 0 ? (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.transcriptTitle}>CALL TRANSCRIPT</Text>
+                {summaryData.transcript.map((msg, i) => (
+                  <View
+                    key={`${msg.role}-${msg.createdAt}-${i}`}
+                    style={[
+                      styles.transcriptBubble,
+                      msg.role === "assistant"
+                        ? styles.aiBubble
+                        : styles.userBubble,
+                    ]}
+                  >
+                    <Text style={styles.transcriptRole}>
+                      {msg.role === "assistant" ? "🤖 AI" : "👤 USER"}
+                    </Text>
+                    <Text style={styles.transcriptContent}>{msg.content}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        )}
+      </View>
+
       {canCancel && (
         <View style={[styles.dangerCard, { marginTop: 24 }]}>
           <Button
@@ -183,5 +251,89 @@ const styles = StyleSheet.create({
     borderColor: "#333",
     borderRadius: 0,
     marginTop: 24,
+  },
+  emptySummary: {
+    alignItems: "center",
+    paddingVertical: 24,
+  },
+  emptySummaryEmoji: { fontSize: 32, marginBottom: 8 },
+  emptySummaryTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#000",
+    letterSpacing: 1,
+  },
+  emptySummaryText: {
+    fontSize: 13,
+    color: "#6b7280",
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  summaryBox: {
+    backgroundColor: "#f9f9f9",
+    borderWidth: 2,
+    borderColor: "#e0e0e0",
+    borderRadius: 0,
+    padding: 16,
+    marginBottom: 12,
+  },
+  summaryText: {
+    fontSize: 15,
+    color: "#000",
+    lineHeight: 22,
+    fontWeight: "500",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  statChip: {
+    flex: 1,
+    backgroundColor: "#FBBF24",
+    borderWidth: 2,
+    borderColor: "#000",
+    padding: 8,
+    alignItems: "center",
+  },
+  statChipLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#000",
+    letterSpacing: 1,
+  },
+  statChipValue: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#000",
+    marginTop: 2,
+  },
+  transcriptTitle: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#6b7280",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  transcriptBubble: {
+    borderWidth: 2,
+    borderColor: "#000",
+    padding: 10,
+    marginBottom: 8,
+  },
+  aiBubble: { backgroundColor: "#ffffff" },
+  userBubble: { backgroundColor: "#FBBF24" },
+  transcriptRole: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#000",
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  transcriptContent: {
+    fontSize: 14,
+    color: "#000",
+    lineHeight: 20,
   },
 });

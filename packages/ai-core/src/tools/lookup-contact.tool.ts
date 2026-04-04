@@ -6,7 +6,7 @@ import type { ToolDefinition, ClaudeToolDef } from "../types";
 const logger = createLogger("LookupContactTool");
 
 const inputSchema = z.object({
-  query: z.string().min(0).optional(),
+  query: z.string().optional(),
   userId: z.string().uuid(),
 });
 
@@ -119,14 +119,10 @@ export const lookupContactTool: ToolDefinition<Input, Output> = {
           query: {
             type: "string",
             description:
-              "Name, email, company, or phone number to search for. If omitted or empty, list recent contacts.",
-          },
-          userId: {
-            type: "string",
-            description: "The ID of the user whose contacts to search",
+              "Name, email, company, or phone number to search for. If omitted or empty, lists recent contacts.",
           },
         },
-        required: ["query", "userId"],
+        required: [],
       },
     };
   },

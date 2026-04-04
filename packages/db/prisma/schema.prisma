@@ -14,7 +14,7 @@ model User {
   name      String
   email     String   @unique
   phone     String?
-  timezone  String   @default("UTC")
+  timezone  String   @default("Asia/Kolkata")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -42,8 +42,10 @@ model Call {
   endedAt     DateTime? @map("ended_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
+  meetingId   String?   @map("meeting_id")
 
   user         User          @relation(fields: [userId], references: [id])
+  meeting      Meeting?      @relation(fields: [meetingId], references: [id])
   conversation Conversation?
 
   @@map("calls")
@@ -79,7 +81,8 @@ model Meeting {
   updatedAt   DateTime      @updatedAt @map("updated_at")
   deletedAt   DateTime?     @map("deleted_at")
 
-  user User @relation(fields: [userId], references: [id])
+  user  User   @relation(fields: [userId], references: [id])
+  calls Call[]
 
   @@map("meetings")
 }

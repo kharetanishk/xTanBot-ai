@@ -159,6 +159,37 @@ function extractTextFromResponse(
     .trim();
 }
 
+/** Merge authenticated context into tool args so Claude never has to guess userId. */
+function enrichToolInput(
+  ctx: AgentContext,
+  toolName: string,
+  rawInput: unknown,
+): Record<string, unknown> {
+  const base =
+    rawInput !== null &&
+    typeof rawInput === "object" &&
+    !Array.isArray(rawInput)
+      ? { ...(rawInput as Record<string, unknown>) }
+      : {};
+  const tz = ctx.userProfile?.timezone ?? "Asia/Kolkata";
+  const enriched: Record<string, unknown> = {
+    ...base,
+    userId: ctx.userId,
+    userTimezone: tz,
+  };
+  if (toolName === "get_current_time") {
+    if (enriched.timezone === undefined || enriched.timezone === "") {
+      enriched.timezone = tz;
+    }
+  }
+  if (toolName === "schedule_meeting") {
+    if (enriched.timezone === undefined || enriched.timezone === "") {
+      enriched.timezone = tz;
+    }
+  }
+  return enriched;
+}
+
 export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
   logger.info(
     { sessionId: ctx.sessionId, userId: ctx.userId },
@@ -281,7 +312,8 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
           logger.info({ toolName: block.name }, "Executing tool");
 
           try {
-            const result = await toolRouter.dispatch(block.name, block.input);
+            const enrichedInput = enrichToolInput(ctx, block.name, block.input);
+            const result = await toolRouter.dispatch(block.name, enrichedInput);
             return {
               type: "tool_result" as const,
               tool_use_id: block.id,

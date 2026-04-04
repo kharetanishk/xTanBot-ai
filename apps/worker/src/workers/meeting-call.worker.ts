@@ -131,6 +131,7 @@ export function createMeetingCallWorker(): Worker {
             await prisma.call.create({
               data: {
                 userId,
+                meetingId,
                 callSid: call.sid,
                 status: "initiated",
                 toNumber: phone,
@@ -230,6 +231,13 @@ export function createMeetingCallWorker(): Worker {
           where: { id: callId },
           data: { summary },
         });
+
+        if (summary) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { summary },
+          });
+        }
 
         const pushToken = await redisConnection.get(`push-token:${userId}`);
         if (pushToken) {

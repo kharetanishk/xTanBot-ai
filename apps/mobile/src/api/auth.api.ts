@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import { AuthResponse, User } from "@types/api.types";
+import type { AuthResponse, User } from "../types/api.types";
 
 export const authApi = {
   register: async (data: {
@@ -21,6 +21,15 @@ export const authApi = {
 
   me: async (): Promise<User> => {
     const res = await apiClient.get<User>("/users/me");
+    return res.data;
+  },
+
+  updateMe: async (data: {
+    name?: string;
+    phone?: string | null;
+    timezone?: string;
+  }): Promise<User> => {
+    const res = await apiClient.patch<User>("/users/me", data);
     return res.data;
   },
 };

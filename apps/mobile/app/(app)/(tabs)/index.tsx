@@ -1,14 +1,22 @@
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "../../../src/stores/auth.store";
+import { useMe } from "../../../src/hooks/useAuth";
 import { useCalls } from "../../../src/hooks/useCalls";
 import { useUpcomingMeetings } from "../../../src/hooks/useMeetings";
 import { useContacts } from "../../../src/hooks/useContacts";
 import CallCard from "../../../src/components/calls/CallCard";
 import MeetingCard from "../../../src/components/meetings/MeetingCard";
 
+const IST = "Asia/Kolkata";
+
 function getGreeting(): string {
-  const h = new Date().getHours();
+  const hourStr = new Intl.DateTimeFormat("en-GB", {
+    timeZone: IST,
+    hour: "numeric",
+    hour12: false,
+  }).format(new Date());
+  const h = parseInt(hourStr, 10);
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
@@ -16,6 +24,7 @@ function getGreeting(): string {
 
 function getFormattedDate(): string {
   return new Date().toLocaleDateString("en-IN", {
+    timeZone: IST,
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -25,7 +34,9 @@ function getFormattedDate(): string {
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
+  const storeUser = useAuthStore((s) => s.user);
+  const { data: apiUser } = useMe();
+  const user = apiUser ?? storeUser;
   const { data: calls = [], isLoading: callsLoading } = useCalls({ refetchInterval: 5000 });
   const { data: upcomingMeetings = [], isLoading: meetingsLoading } = useUpcomingMeetings();
   const { data: contacts = [], isLoading: contactsLoading } = useContacts();

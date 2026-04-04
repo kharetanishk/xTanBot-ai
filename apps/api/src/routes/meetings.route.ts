@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { prisma } from "@xtanbot/db";
 import { requireAuth } from "../middleware/auth.middleware";
 import { meetingService } from "../services/meeting.service";
 import { CreateMeetingSchema, UpdateMeetingSchema } from "@xtanbot/zod-schemas";
@@ -27,6 +28,70 @@ export async function meetingsRoutes(app: FastifyInstance): Promise<void> {
       const { userId } = request.user;
       const meetings = await meetingService.getUpcoming(userId);
       return reply.send(meetings);
+    },
+  );
+
+  app.get(
+    "/meetings/:id/summary",
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { userId } = request.user;
+
+      const meeting = await prisma.meeting.findFirst({
+        where: { id, userId, deletedAt: null },
+      });
+      if (!meeting) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Meeting not found",
+        });
+      }
+
+      const call = await prisma.call.findFirst({
+        where: { meetingId: id, userId },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!call) {
+        return reply.send({
+          hasSummary: false,
+          summary: null,
+          transcript: [],
+        });
+      }
+
+      const conv = await prisma.conversation.findFirst({
+        where: { callId: call.id },
+        include: {
+          messages: {
+            orderBy: { createdAt: "asc" },
+            where: { role: { in: ["user", "assistant"] } },
+          },
+        },
+      });
+
+      if (!conv) {
+        return reply.send({
+          hasSummary: false,
+          summary: null,
+          transcript: [],
+        });
+      }
+
+      return reply.send({
+        hasSummary: !!conv.summary,
+        summary: conv.summary,
+        transcript: conv.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt.toISOString(),
+        })),
+        callId: call.id,
+        callStatus: call.status,
+        callDuration: call.duration,
+      });
     },
   );
 

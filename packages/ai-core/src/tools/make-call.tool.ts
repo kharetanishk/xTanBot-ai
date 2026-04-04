@@ -56,16 +56,12 @@ export const makeCallTool: ToolDefinition<Input, Output> = {
             description:
               "Phone number to call in E.164 format e.g. +1234567890",
           },
-          userId: {
-            type: "string",
-            description: "The ID of the user making the call",
-          },
           reason: {
             type: "string",
             description: "Optional reason for the call",
           },
         },
-        required: ["toNumber", "userId"],
+        required: ["toNumber"],
       },
     };
   },

@@ -267,6 +267,9 @@ importers:
       '@xtanbot/config':
         specifier: workspace:*
         version: link:../config
+      '@xtanbot/db':
+        specifier: workspace:*
+        version: link:../db
       '@xtanbot/logger':
         specifier: workspace:*
         version: link:../logger
