@@ -247,12 +247,14 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       logger.info(
         {
           sessionId: ctx.sessionId,
+          isVoice,
           toolsUsed,
           iterations,
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
+          replyPreview: truncatedText.slice(0, 240),
         },
-        "Agent loop completed",
+        "Agent loop completed — model reply ready for TTS or chat",
       );
 
       return {

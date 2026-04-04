@@ -276,8 +276,10 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
       toolsUsed: agentResponse.toolsUsed,
       inputTokens: agentResponse.usage.inputTokens,
       outputTokens: agentResponse.usage.outputTokens,
+      assistantReply: agentResponse.text,
+      assistantReplyPreview: agentResponse.text.slice(0, 240),
     },
-    "Agent job completed",
+    "Agent job completed — emitting agent.responded for voice TTS",
   );
 
   // 8. Cost tracking

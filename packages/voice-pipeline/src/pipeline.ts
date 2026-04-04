@@ -154,16 +154,27 @@ export function createPipeline(
 
     logger.info(
       { transcript: cleaned, sessionId: currentSession.sessionId },
-      "Final transcript received — enqueuing agent job",
+      "STT final — enqueueing agent job",
     );
 
-    await enqueueAgentJob({
-      sessionId: currentSession.sessionId,
-      userId: currentSession.userId,
-      transcript: cleaned,
-      callSid: currentSession.callSid,
-      conversationId: currentSession.conversationId,
-    });
+    try {
+      await enqueueAgentJob({
+        sessionId: currentSession.sessionId,
+        userId: currentSession.userId,
+        transcript: cleaned,
+        callSid: currentSession.callSid,
+        conversationId: currentSession.conversationId,
+      });
+      logger.info(
+        { sessionId: currentSession.sessionId },
+        "Agent job queued successfully",
+      );
+    } catch (err) {
+      logger.error(
+        { err, sessionId: currentSession.sessionId, transcript: cleaned },
+        "Failed to enqueue agent job — no AI reply for this turn",
+      );
+    }
   }
 
   async function handleTTSResponse(text: string): Promise<void> {

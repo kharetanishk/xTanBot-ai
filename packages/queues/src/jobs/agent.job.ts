@@ -40,8 +40,8 @@ export async function enqueueAgentJob(data: AgentJob): Promise<void> {
   }
 
   await agentQueue.add(AGENT_JOB_NAME, validated, {
-    // One job id per utterance so a new user turn can enqueue while a prior job is waiting/active.
-    jobId: `agent:${validated.sessionId}:${randomUUID()}`,
+    // Unique per utterance; BullMQ forbids ":" in custom jobId (breaks Redis key layout).
+    jobId: `agent-${validated.sessionId}-${randomUUID()}`,
     attempts: 3,
     backoff: { type: "exponential", delay: 1000 },
     removeOnComplete: 100,
