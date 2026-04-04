@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { agentQueue, AGENT_JOB_NAME } from "../queues/agent.queue";
 import { createLogger } from "@xtanbot/logger";
@@ -39,14 +40,19 @@ export async function enqueueAgentJob(data: AgentJob): Promise<void> {
   }
 
   await agentQueue.add(AGENT_JOB_NAME, validated, {
-    jobId: `agent:${validated.sessionId}`,
+    // One job id per utterance so a new user turn can enqueue while a prior job is waiting/active.
+    jobId: `agent:${validated.sessionId}:${randomUUID()}`,
     attempts: 3,
     backoff: { type: "exponential", delay: 1000 },
     removeOnComplete: 100,
     removeOnFail: 500,
   });
   logger.info(
-    { sessionId: data.sessionId, userId: data.userId },
+    {
+      sessionId: data.sessionId,
+      userId: data.userId,
+      transcriptPreview: validated.transcript.slice(0, 160),
+    },
     "Agent job enqueued",
   );
 }

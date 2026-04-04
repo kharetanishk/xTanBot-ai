@@ -59,8 +59,17 @@ export function createDeepgramConnection(
       const isFinal = result.is_final ?? false;
 
       if (transcript && transcript.trim().length > 0) {
+        const trimmed = transcript.trim();
+        if (isFinal) {
+          logger.info(
+            { transcript: trimmed, confidence },
+            "Deepgram final transcript",
+          );
+        } else {
+          logger.debug({ transcript: trimmed }, "Deepgram interim transcript");
+        }
         await onTranscript({
-          transcript: transcript.trim(),
+          transcript: trimmed,
           isFinal,
           confidence,
         });
@@ -117,5 +126,12 @@ export function sendAudioToDeepgram(
 ): void {
   if (!connection) return;
   const audioBuffer = Buffer.from(audioBase64, "base64");
-  connection.send(audioBuffer.buffer as ArrayBuffer);
+  if (audioBuffer.length === 0) return;
+  // Never use `audioBuffer.buffer` alone: Node may use a pooled ArrayBuffer with wrong
+  // length/offset, corrupting μ-law frames and yielding no usable STT (Deepgram duration ~0).
+  const slice = audioBuffer.buffer.slice(
+    audioBuffer.byteOffset,
+    audioBuffer.byteOffset + audioBuffer.byteLength,
+  );
+  connection.send(slice);
 }

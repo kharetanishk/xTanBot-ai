@@ -187,6 +187,14 @@ async function bootstrap(): Promise<void> {
       typeof event.sessionId === "string" ? event.sessionId : "";
     const text = typeof event.text === "string" ? event.text : "";
     if (!sessionId || !text) return;
+    logger.info(
+      {
+        sessionId,
+        replyLength: text.length,
+        replyPreview: text.slice(0, 120),
+      },
+      "agent.responded — routing to voice TTS",
+    );
     await playAgentVoiceResponse(sessionId, text);
   });
   logger.info("Subscribed to agent.responded for voice TTS playback");

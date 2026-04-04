@@ -35,6 +35,14 @@ export async function playAgentVoiceResponse(
     return;
   }
   try {
+    logger.info(
+      {
+        sessionId,
+        textLength: text.length,
+        textPreview: text.slice(0, 120),
+      },
+      "Playing agent reply via voice TTS",
+    );
     await fn(text);
   } catch (err) {
     logger.error({ err, sessionId }, "playAgentVoiceResponse failed");
