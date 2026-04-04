@@ -245,6 +245,9 @@ importers:
       bullmq:
         specifier: ^5.0.0
         version: 5.70.4
+      twilio:
+        specifier: ^5.3.0
+        version: 5.12.2
     devDependencies:
       '@types/node':
         specifier: ^20.12.0

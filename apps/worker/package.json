@@ -22,7 +22,8 @@
     "@xtanbot/redis": "workspace:*",
     "@xtanbot/voice-pipeline": "workspace:*",
     "@xtanbot/zod-schemas": "workspace:*",
-    "bullmq": "^5.0.0"
+    "bullmq": "^5.0.0",
+    "twilio": "^5.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",

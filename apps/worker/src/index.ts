@@ -5,6 +5,10 @@ import { meetingCallQueue } from "@xtanbot/queues";
 import { createAgentWorker } from "./workers/agent.worker";
 import { createNotificationWorker } from "./workers/notification.worker";
 import { createMeetingCallWorker } from "./workers/meeting-call.worker";
+import {
+  startAlarmScheduler,
+  stopAlarmScheduler,
+} from "./workers/alarm.worker";
 
 const logger = createLogger("Worker");
 
@@ -52,8 +56,12 @@ async function bootstrap(): Promise<void> {
 
   await scheduleDailyBriefings();
 
+  startAlarmScheduler();
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "Shutting down workers...");
+
+    stopAlarmScheduler();
 
     await Promise.all([
       agentWorker.close(),

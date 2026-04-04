@@ -26,6 +26,18 @@ export interface Call {
   updatedAt: string;
 }
 
+export interface Alarm {
+  id: string;
+  userId: string;
+  label: string;
+  scheduledAt: string;
+  status: "scheduled" | "ringing" | "acknowledged" | "cancelled" | "failed";
+  repeatCount: number;
+  callSid?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Meeting {
   id: string;
   userId: string;

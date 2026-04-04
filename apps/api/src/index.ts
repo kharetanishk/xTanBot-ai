@@ -25,6 +25,7 @@ import { contactsRoutes } from "./routes/contacts.route";
 import { conversationsRoutes } from "./routes/conversations.route";
 import { pushRoutes } from "./routes/push.route";
 import { usersRoutes } from "./routes/users.route";
+import { alarmsRoutes } from "./routes/alarms.route";
 import { attachTwilioMediaStreamWss } from "./twilio-media-stream";
 
 const logger = createLogger("API");
@@ -133,6 +134,7 @@ async function bootstrap(): Promise<void> {
   await app.register(contactsRoutes);
   await app.register(conversationsRoutes);
   await app.register(pushRoutes);
+  await app.register(alarmsRoutes);
 
   app.get(
     "/metrics",

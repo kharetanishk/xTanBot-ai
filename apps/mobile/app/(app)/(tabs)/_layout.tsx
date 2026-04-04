@@ -21,6 +21,7 @@ export default function TabLayout() {
       <Tabs.Screen name="calls" options={{ title: "Calls" }} />
       <Tabs.Screen name="chat" options={{ title: "Chat" }} />
       <Tabs.Screen name="meetings" options={{ title: "Meetings" }} />
+      <Tabs.Screen name="alarms" options={{ title: "Alarms" }} />
       <Tabs.Screen name="contacts" options={{ title: "Contacts" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
     </Tabs>

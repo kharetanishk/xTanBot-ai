@@ -23,6 +23,7 @@ model User {
   meetings      Meeting[]
   contacts      Contact[]
   conversations Conversation[]
+  alarms        Alarm[]
 
   @@map("users")
 }
@@ -95,6 +96,36 @@ enum MeetingStatus {
   rescheduled
 
   @@map("meeting_status")
+}
+
+// ─── Alarms ───────────────────────────────────────────────
+
+model Alarm {
+  id          String      @id @default(uuid())
+  userId      String      @map("user_id")
+  label       String      @default("Wake up alarm")
+  scheduledAt DateTime    @map("scheduled_at")
+  status      AlarmStatus @default(scheduled)
+  repeatCount Int         @default(0) @map("repeat_count")
+  callSid     String?     @map("call_sid")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([scheduledAt, status])
+  @@map("alarms")
+}
+
+enum AlarmStatus {
+  scheduled
+  ringing
+  acknowledged
+  cancelled
+  failed
+
+  @@map("alarm_status")
 }
 
 // ─── Contacts ─────────────────────────────────────────────

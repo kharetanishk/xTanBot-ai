@@ -20,8 +20,11 @@ const EnvSchema = z.object({
   // ─── Redis ────────────────────────────────────────
   REDIS_URL: z.string().url("REDIS_URL must be a valid URL"),
 
-  // ─── Public API URL (for Twilio webhooks) ─────────
-  API_URL: z.string().url("API_URL must be a valid URL"),
+  // ─── Public API URL (for Twilio webhooks; use HTTPS ngrok URL in dev) ─────────
+  API_URL: z
+    .string()
+    .url("API_URL must be a valid URL")
+    .default("http://localhost:3000"),
 
   // ─── Anthropic ────────────────────────────────────
   ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),

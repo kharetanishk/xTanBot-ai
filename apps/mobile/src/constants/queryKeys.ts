@@ -18,4 +18,7 @@ export const queryKeys = {
   },
   conversations: ["conversations"] as const,
   conversation: (callId: string) => ["conversations", callId] as const,
+  alarms: {
+    all: ["alarms"] as const,
+  },
 } as const;
