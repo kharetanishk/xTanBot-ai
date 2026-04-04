@@ -17,8 +17,12 @@ export {
 } from "./elevenlabs/tts-client";
 export {
   createDeepgramConnection,
+  createSttLifecycle,
+  markSttDisposed,
+  resetSttLifecycleForCall,
   sendAudioToDeepgram,
 } from "./transcription/stt-client";
+export type { SttLifecycle } from "./transcription/stt-client";
 export type {
   PipelineSession,
   TwilioStreamEvent,

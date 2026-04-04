@@ -12,6 +12,9 @@ import {
 } from "./twilio/stream-handler";
 import {
   createDeepgramConnection,
+  createSttLifecycle,
+  markSttDisposed,
+  resetSttLifecycleForCall,
   sendAudioToDeepgram,
 } from "./transcription/stt-client";
 import { streamTextToSpeech } from "./elevenlabs/tts-client";
@@ -33,10 +36,10 @@ const bargeInTotal = counter(
   "Total number of barge-in interruptions detected",
 );
 
+/** Omit short reply words — they are often the entire user turn on a phone call. */
 const FILLER_WORDS = [
   "um", "uh", "hmm", "mhm", "mm",
   "like", "you know", "i mean",
-  "okay", "ok", "yeah", "yes", "no",
   "so", "well", "right",
 ] as const;
 
@@ -71,6 +74,7 @@ export function createPipeline(
   wsClose?: WebSocketClose,
 ) {
   try {
+    const sttLifecycle = createSttLifecycle();
     let deepgramConnection: ReturnType<typeof createDeepgramConnection> = null;
     let currentStreamSid: string | null = null;
     let currentSession: PipelineSession | null = null;
@@ -82,7 +86,7 @@ export function createPipeline(
     const SILENCE_PROMPT_MS = 8000;
     const SILENCE_DISCONNECT_MS = 10000;
     let lastTranscript = "";
-    const MIN_TRANSCRIPT_LENGTH = 3;
+    const MIN_TRANSCRIPT_LENGTH = 2;
     /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
     let hasBufferedOutboundMedia = false;
 
@@ -371,7 +375,12 @@ export function createPipeline(
           greeting = `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`;
         }
 
+        await handleTTSResponse(greeting);
+
+        // Open STT only after the greeting so Deepgram is not idle with no audio (drops the socket).
+        resetSttLifecycleForCall(sttLifecycle);
         deepgramConnection = createDeepgramConnection(
+          sttLifecycle,
           async (result) => {
             await handleTranscript(result.transcript, result.isFinal);
           },
@@ -384,7 +393,6 @@ export function createPipeline(
           },
         );
 
-        await handleTTSResponse(greeting);
         bargeInAllowed = true;
         resetSilenceTimer();
       } catch (err) {
@@ -449,6 +457,8 @@ export function createPipeline(
 
     logger.info({ callSid, streamSid }, "Pipeline session ending");
 
+    markSttDisposed(sttLifecycle);
+
     if (currentSession) {
       unregisterVoiceTtsHandler(currentSession.sessionId);
       await deleteSession(currentSession.sessionId);
@@ -467,7 +477,11 @@ export function createPipeline(
     }
 
     if (deepgramConnection) {
-      deepgramConnection.finish();
+      try {
+        deepgramConnection.finish();
+      } catch (err) {
+        logger.debug({ err }, "Deepgram finish after dispose");
+      }
       deepgramConnection = null;
     }
 

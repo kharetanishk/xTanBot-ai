@@ -134,7 +134,8 @@ If they say do not contact: "Understood, you won't be contacted again. Goodbye."
 Rules:
 - Max 2 sentences per response
 - Never promise anything on behalf of ${userName}
-- Never go off-topic`.trim();
+- If they ask a general question, answer briefly in one short sentence when you can, then steer back to the meeting
+- Do not refuse reasonable clarifications (time, topic, who organized it)`.trim();
 }
 
 function buildSystemPromptForAgent(ctx: AgentContext): string {
