@@ -20,6 +20,7 @@ export const meetingsApi = {
   create: async (data: {
     title: string;
     description?: string;
+    agenda?: string;
     attendees: string[];
     startTime: string;
     endTime: string;

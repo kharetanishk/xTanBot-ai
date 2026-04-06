@@ -9,6 +9,45 @@ import { config } from "@xtanbot/config";
 import { counter, histogram } from "@xtanbot/observability";
 import type { AgentJob } from "@xtanbot/queues";
 
+async function sendPostCallWhatsApp(phone: string, message: string): Promise<void> {
+  if (!config.MSG91_AUTH_KEY) return;
+  const digits = phone.replace(/\D/g, "");
+  const normalised =
+    digits.startsWith("91") && digits.length === 12
+      ? digits
+      : `91${digits.slice(-10)}`;
+
+  await fetch(
+    "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authkey: config.MSG91_AUTH_KEY,
+      },
+      body: JSON.stringify({
+        integrated_number: config.MSG91_INTEGRATED_NUMBER,
+        content_type: "template",
+        payload: {
+          messaging_product: "whatsapp",
+          type: "template",
+          template: {
+            name: config.MSG91_TEMPLATE_NAME,
+            language: { code: "en", policy: "deterministic" },
+            namespace: null as string | null,
+            to_and_components: [
+              {
+                to: [normalised],
+                components: { body_1: { type: "text", value: message } },
+              },
+            ],
+          },
+        },
+      }),
+    },
+  );
+}
+
 const logger = createLogger("AgentWorker");
 
 const agentResponseMs = histogram(

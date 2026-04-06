@@ -78,6 +78,7 @@ export interface Meeting {
   userId: string;
   title: string;
   description?: string;
+  agenda?: string | null;
   startTime: string;
   endTime: string;
   attendees: string[];

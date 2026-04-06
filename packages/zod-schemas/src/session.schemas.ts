@@ -15,6 +15,8 @@ export const CallSessionSchema = z.object({
   createdAt: z.string().datetime(),
   lastActivityAt: z.string().datetime(),
   status: z.enum(["active", "completed", "expired"]),
+  /** Arbitrary voice context injected by pipeline / make_call (appointment details, etc.) */
+  voiceContext: z.record(z.unknown()).optional(),
 });
 
 export type CallSession = z.infer<typeof CallSessionSchema>;

@@ -11,6 +11,7 @@ export const MeetingStatusSchema = z.enum([
 export const CreateMeetingSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
+  agenda: z.string().max(2000).optional().nullable(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
   attendees: z.array(z.string().email()).min(1),
@@ -26,6 +27,7 @@ export const MeetingSchema = z.object({
   userId: z.string().uuid(),
   title: z.string(),
   description: z.string().nullable(),
+  agenda: z.string().nullable().optional(),
   startTime: z.date(),
   endTime: z.date(),
   attendees: z.array(z.string()),

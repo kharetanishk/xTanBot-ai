@@ -8,6 +8,45 @@ import { createLogger } from "@xtanbot/logger";
 const logger = createLogger("MeetingsRoute");
 
 export async function meetingsRoutes(app: FastifyInstance): Promise<void> {
+  // POST /meetings/internal — create a meeting from an internal service (ai-core tool)
+  app.post("/meetings/internal", async (request, reply) => {
+    if (request.headers["x-internal-service"] !== "ai-core") {
+      return reply.status(403).send({ error: "Forbidden" });
+    }
+
+    const body = request.body as {
+      userId: string;
+      title: string;
+      startTime: string;
+      endTime: string;
+      attendees: string[];
+      description?: string | null;
+      location?: string | null;
+      timezone?: string;
+      agenda?: string | null;
+    };
+
+    try {
+      const meeting = await meetingService.create(
+        {
+          title: body.title,
+          startTime: body.startTime,
+          endTime: body.endTime,
+          attendees: body.attendees,
+          description: body.description ?? undefined,
+          location: body.location ?? undefined,
+          timezone: body.timezone ?? "Asia/Kolkata",
+        },
+        body.userId,
+      );
+
+      return reply.status(201).send(meeting);
+    } catch (err) {
+      logger.error({ err }, "Internal meeting creation failed");
+      return reply.status(500).send({ error: "Failed to create meeting" });
+    }
+  });
+
   app.post("/meetings", { preHandler: requireAuth }, async (request, reply) => {
     const body = CreateMeetingSchema.parse(request.body);
     const userId = (request.user as any).userId as string;

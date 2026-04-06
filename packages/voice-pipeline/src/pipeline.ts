@@ -17,7 +17,11 @@ import {
   resetSttLifecycleForCall,
   sendAudioToDeepgram,
 } from "./transcription/stt-client";
-import { streamTextToSpeech } from "./elevenlabs/tts-client";
+import {
+  streamTextToSpeech,
+  getVoiceSettingsForMood,
+  type VoiceSettings,
+} from "./elevenlabs/tts-client";
 import type { PipelineSession } from "./types";
 import { randomUUID } from "crypto";
 import {
@@ -108,6 +112,7 @@ export function createPipeline(
     const MIN_TRANSCRIPT_LENGTH = 2;
     /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
     let hasBufferedOutboundMedia = false;
+    let currentVoiceSettings: VoiceSettings = getVoiceSettingsForMood("default");
     /** Ignore barge-in right after TTS starts (echo / line noise clears the whole reply). */
     let bargeInGraceUntil = 0;
     let consecutiveLoudInboundChunks = 0;
@@ -218,12 +223,17 @@ export function createPipeline(
       wsSend(buildTwilioClearMessage(currentStreamSid));
     }
 
-    await streamTextToSpeech(text, async (audioBase64) => {
-      if (!isSpeaking || !currentStreamSid) return;
-      if (!audioBase64?.length) return;
-      wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
-      hasBufferedOutboundMedia = true;
-    });
+    await streamTextToSpeech(
+      text,
+      async (audioBase64) => {
+        if (!isSpeaking || !currentStreamSid) return;
+        if (!audioBase64?.length) return;
+        wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
+        hasBufferedOutboundMedia = true;
+      },
+      undefined,
+      currentVoiceSettings,
+    );
 
     isSpeaking = false;
   }
@@ -312,6 +322,33 @@ export function createPipeline(
           userId = callSid;
         }
 
+        // Load any pending call context stored by make_call tool (appointment booking, etc.)
+        let pendingCallContext: Record<string, unknown> = {};
+        try {
+          const normalised = (to ?? "").replace(/^\+/, "");
+          if (normalised) {
+            const contextKey = `call:context:pending:${normalised}`;
+            const storedCtx = await redisConnection.get(contextKey);
+            if (storedCtx) {
+              pendingCallContext = JSON.parse(storedCtx) as Record<string, unknown>;
+              await redisConnection.del(contextKey);
+              logger.info(
+                { contextKey, pendingCallContext },
+                "Loaded and consumed pending call context from Redis",
+              );
+            }
+          }
+        } catch (err) {
+          logger.warn({ err }, "Failed to load pending call context from Redis");
+        }
+
+        // Merge pending context into the existing voice context (from call-context:callSid)
+        const mergedCtx = { ...(ctx as Record<string, unknown>), ...pendingCallContext };
+
+        // Set voice settings based on mood in call context (for story calls)
+        const ctxMood = (mergedCtx.mood as string | undefined) ?? "default";
+        currentVoiceSettings = getVoiceSettingsForMood(ctxMood);
+
         const session: PipelineSession = {
           sessionId,
           userId,
@@ -332,11 +369,27 @@ export function createPipeline(
           userId,
           callSid,
           conversationId,
+          voiceContext: mergedCtx,
           messages: [],
           createdAt: new Date().toISOString(),
           lastActivityAt: new Date().toISOString(),
           status: "active",
         });
+
+        // Write merged context back to callSid key so post-call-intelligence worker can read it
+        if (Object.keys(pendingCallContext).length > 0 && callSid) {
+          try {
+            await redisConnection.set(
+              `call-context:${callSid}`,
+              JSON.stringify(mergedCtx),
+              "EX",
+              3600,
+            );
+            logger.info({ callSid }, "Call context stored at callSid key");
+          } catch (err) {
+            logger.warn({ err }, "Failed to store callContext at callSid");
+          }
+        }
 
         registerVoiceTtsHandler(sessionId, handleTTSResponse);
 
@@ -360,16 +413,50 @@ export function createPipeline(
 
         let greeting = "Hello! I'm xTanBot, your AI assistant. How can I help you today?";
 
-        const ctxCallType = (ctx as any)?.callType as string | undefined;
-        if (ctxCallType === "scheduled-meeting") {
-          const contactName =
-            ((ctx as any)?.contactName as string | undefined) ??
-            ((ctx as any)?.attendeeName as string | undefined);
+        // Use mergedCtx (base ctx + pending appointment context) for greeting selection
+        const ctxCallType = (mergedCtx as any)?.callType as string | undefined;
+        const ctxPurpose = (mergedCtx as any)?.purpose as string | undefined;
+        const isAppointmentCall =
+          ctxPurpose?.toLowerCase().includes("appointment") ||
+          ctxPurpose?.toLowerCase().includes("booking");
+        const isStoryCall = ctxCallType === "story-call";
+
+        if (isStoryCall) {
+          const calleeName = (mergedCtx as any)?.calleeName as string | undefined;
+          const ctxMoodLabel = (mergedCtx as any)?.mood as string | undefined;
+          const moodGreeting: Record<string, string> = {
+            friendly: "Hi there",
+            sales: "Hello",
+            rude: "Hey",
+            intellectual: "Good day",
+            influencing: "Hello",
+            custom: "Hello",
+          };
+          const prefix = moodGreeting[ctxMoodLabel ?? "friendly"] ?? "Hello";
+          greeting =
+            `${prefix}${calleeName ? `, ${calleeName}` : ""}! ` +
+            `This is xTanBot calling on behalf of ${userName}. Do you have a moment?`;
+        } else if (isAppointmentCall) {
+          const calleeName = (mergedCtx as any)?.calleeName as string | undefined;
           const un =
-            ((ctx as any)?.userName as string | undefined) ?? userName;
+            ((mergedCtx as any)?.userName as string | undefined) ?? userName;
+          const appointmentDate = (mergedCtx as any)?.appointmentDate as string | undefined;
+          const appointmentTime = (mergedCtx as any)?.appointmentTime as string | undefined;
+          greeting =
+            `Hello, I am xTanBot calling on behalf of ${un ?? "the user"} to book an appointment` +
+            (calleeName ? ` with ${calleeName}` : "") +
+            (appointmentDate ? ` for ${appointmentDate}` : "") +
+            (appointmentTime ? ` at ${appointmentTime}` : "") +
+            ". Am I speaking with the right person?";
+        } else if (ctxCallType === "scheduled-meeting") {
+          const contactName =
+            ((mergedCtx as any)?.contactName as string | undefined) ??
+            ((mergedCtx as any)?.attendeeName as string | undefined);
+          const un =
+            ((mergedCtx as any)?.userName as string | undefined) ?? userName;
           greeting = `Hi, this is xTanBot calling on behalf of ${un ?? "the user"}. Am I speaking with ${contactName ?? "there"}?`;
         } else if (ctxCallType === "daily-briefing") {
-          const name = (ctx as any)?.userName as string | undefined;
+          const name = (mergedCtx as any)?.userName as string | undefined;
           greeting = `Good morning ${name ?? "there"}! This is your xTanBot daily briefing.`;
         } else if (
           !meetingContext &&

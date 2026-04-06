@@ -45,6 +45,7 @@ export const meetingService = {
           title: meeting.title ?? "",
           attendees: meeting.attendees ?? [],
           startTime: meeting.startTime,
+          agenda: (meeting as { agenda?: string | null }).agenda ?? null,
         },
         {
           delay: delayMs,

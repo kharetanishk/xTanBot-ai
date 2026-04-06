@@ -31,6 +31,7 @@ export default function NewMeetingScreen() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [attendeesStr, setAttendeesStr] = useState("");
+  const [agenda, setAgenda] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function handleCreate() {
@@ -67,7 +68,13 @@ export default function NewMeetingScreen() {
       .filter(Boolean);
 
     createMeeting.mutate(
-      { title: title.trim(), startTime: start, endTime: end, attendees },
+      {
+        title: title.trim(),
+        startTime: start,
+        endTime: end,
+        attendees,
+        ...(agenda.trim() ? { agenda: agenda.trim() } : {}),
+      },
       {
         onSuccess: () => router.back(),
         onError: (err) => setError(parseError(err)),
@@ -128,6 +135,16 @@ export default function NewMeetingScreen() {
           placeholder="a@x.com, b@y.com"
           placeholderTextColor="#666"
           multiline
+        />
+        <Text style={styles.label}>MEETING AGENDA (optional)</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          value={agenda}
+          onChangeText={setAgenda}
+          placeholder="What should AI ask? e.g. Confirm deadline, check blockers, get status update"
+          placeholderTextColor="#666"
+          multiline
+          returnKeyType="done"
         />
         <ErrorMessage message={error} />
         <Button

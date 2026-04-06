@@ -6,9 +6,52 @@ import {
   MEETING_CALL_QUEUE_NAME,
 } from "@xtanbot/queues";
 import { createLogger } from "@xtanbot/logger";
-import { config } from "@xtanbot/config";
+import { config, type Env } from "@xtanbot/config";
 
 const logger = createLogger("MeetingCallWorker");
+
+async function sendPostCallWhatsApp(
+  phone: string,
+  message: string,
+  cfg: Env,
+): Promise<void> {
+  if (!cfg.MSG91_AUTH_KEY) return;
+  const digits = phone.replace(/\D/g, "");
+  const normalised =
+    digits.startsWith("91") && digits.length === 12
+      ? digits
+      : `91${digits.slice(-10)}`;
+
+  await fetch(
+    "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authkey: cfg.MSG91_AUTH_KEY,
+      },
+      body: JSON.stringify({
+        integrated_number: cfg.MSG91_INTEGRATED_NUMBER,
+        content_type: "template",
+        payload: {
+          messaging_product: "whatsapp",
+          type: "template",
+          template: {
+            name: cfg.MSG91_TEMPLATE_NAME,
+            language: { code: "en", policy: "deterministic" },
+            namespace: null as string | null,
+            to_and_components: [
+              {
+                to: [normalised],
+                components: { body_1: { type: "text", value: message } },
+              },
+            ],
+          },
+        },
+      }),
+    },
+  );
+}
 
 const connection = {
   host: new URL(config.REDIS_URL).hostname,
@@ -27,6 +70,7 @@ type AutoCallMeetingPayload = {
   title: string;
   attendees: string[];
   startTime: string;
+  agenda?: string | null;
 };
 
 type ReminderPayload = {
@@ -56,8 +100,8 @@ export function createMeetingCallWorker(): Worker {
     async (job: Job<AutoCallMeetingPayload | ReminderPayload | PostCallPayload | DailyBriefingPayload>) => {
       const log = logger.child({ jobId: job.id, jobName: job.name });
 
-      if (job.name === "auto-call-meeting") {
-        const { meetingId, userId, title, attendees } =
+        if (job.name === "auto-call-meeting") {
+        const { meetingId, userId, title, attendees, agenda } =
           job.data as AutoCallMeetingPayload;
 
         const meeting = await prisma.meeting.findUnique({
@@ -115,6 +159,7 @@ export function createMeetingCallWorker(): Worker {
                 userName: user.name,
                 userId,
                 callType: "scheduled-meeting" as const,
+                agenda: agenda ?? null,
               }),
             );
 
@@ -194,22 +239,39 @@ export function createMeetingCallWorker(): Worker {
           )
           .join("\n");
 
+        // Fetch agenda from the call's meeting (if linked)
+        const callRecord = await prisma.call.findUnique({
+          where: { id: callId },
+          include: { meeting: true },
+        });
+        const jobAgenda = callRecord?.meeting?.agenda ?? null;
+        const agendaContext = jobAgenda
+          ? `\n\nMEETING AGENDA (answer each item in agendaAnswers):\n${jobAgenda}`
+          : "";
+
         const { default: Anthropic } = await import("@anthropic-ai/sdk");
         const anthropic = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
         const analysis = await anthropic.messages.create({
           model: config.ANTHROPIC_HAIKU_MODEL,
-          max_tokens: 300,
+          max_tokens: 500,
           messages: [
             {
               role: "user",
               content:
-                `Analyze this call transcript and respond ONLY with JSON:\n` +
+                `Analyze this meeting call transcript and provide a structured summary.` +
+                agendaContext +
+                `\n\nRespond ONLY with JSON:\n` +
                 `{\n` +
-                `  "summary": "2-3 sentence summary of what was discussed",\n` +
+                `  "summary": "2-3 sentence overview of what was discussed",\n` +
+                `  "agendaAnswers": {},\n` +
                 `  "outcome": "confirmed" | "cancelled" | "rescheduled" | "no-answer" | "completed",\n` +
-                `  "actionRequired": "string or null"\n` +
-                `}\n\nTranscript:\n${transcript}`,
+                `  "actionItems": ["list of next steps"],\n` +
+                `  "sentiment": "positive" | "neutral" | "negative",\n` +
+                `  "followUpRequired": true | false\n` +
+                `}\n\n` +
+                `If agenda was provided, populate agendaAnswers with each agenda item as key and the attendee's answer as value.\n` +
+                `\nTRANSCRIPT:\n${transcript}`,
             },
           ],
         });
@@ -247,6 +309,37 @@ export function createMeetingCallWorker(): Worker {
             body: summary || "Your scheduled call has ended.",
             data: { callId, screen: "call-detail" },
           });
+        }
+
+        // Post-call WhatsApp for appointment booking calls
+        try {
+          const sessionKey = `call-context:${callRecord?.callSid ?? ""}`;
+          const sessionCtxRaw = await redisConnection.get(sessionKey);
+          const sessionCtx = sessionCtxRaw
+            ? (JSON.parse(sessionCtxRaw) as Record<string, unknown>)
+            : {};
+          const purpose = (sessionCtx.purpose as string | undefined) ?? "";
+          const isAppointmentCall =
+            purpose.toLowerCase().includes("appointment") ||
+            purpose.toLowerCase().includes("booking");
+
+          if (isAppointmentCall && summary) {
+            const user = await prisma.user.findUnique({ where: { id: userId } });
+            if (user?.phone) {
+              const now = new Date().toLocaleString("en-IN", {
+                timeZone: "Asia/Kolkata",
+              });
+              const msg =
+                `xTanBot Appointment Update:\n\n${summary}\n\nCall completed at ${now}`;
+              await sendPostCallWhatsApp(user.phone, msg, config);
+              log.info(
+                { userId, phone: user.phone },
+                "Post-call appointment WhatsApp sent",
+              );
+            }
+          }
+        } catch (err) {
+          log.error({ err }, "Failed to send post-call appointment WhatsApp");
         }
 
         log.info({ callId }, "Post-call intelligence completed");

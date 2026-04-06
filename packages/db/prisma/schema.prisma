@@ -72,6 +72,7 @@ model Meeting {
   userId      String        @map("user_id")
   title       String
   description String?
+  agenda      String?
   startTime   DateTime      @map("start_time")
   endTime     DateTime      @map("end_time")
   attendees   String[]

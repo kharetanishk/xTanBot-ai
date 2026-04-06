@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { createLogger } from "@xtanbot/logger";
-import { prisma } from "@xtanbot/db";
 import type { ToolDefinition, ClaudeToolDef } from "../types";
 
 const logger = createLogger("ScheduleMeetingTool");
@@ -13,7 +12,8 @@ const inputSchema = z.object({
   attendees: z.array(z.string().min(1)).min(1),
   description: z.string().optional(),
   location: z.string().optional(),
-  timezone: z.string().optional().default("UTC"),
+  timezone: z.string().optional().default("Asia/Kolkata"),
+  agenda: z.string().optional(),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -34,41 +34,68 @@ export const scheduleMeetingTool: ToolDefinition<Input, Output> = {
 
   async execute(input: Input): Promise<Output> {
     logger.info(
-      {
-        title: input.title,
-        startTime: input.startTime,
-        userId: input.userId,
-      },
-      "Scheduling meeting in database",
+      { title: input.title, userId: input.userId },
+      "Scheduling meeting via internal API",
     );
 
     try {
+      const { config } = await import("@xtanbot/config");
+
       const start = new Date(input.startTime);
       const end = input.endTime
         ? new Date(input.endTime)
         : new Date(start.getTime() + 60 * 60 * 1000);
 
-      const meeting = await prisma.meeting.create({
-        data: {
+      const response = await fetch(`${config.API_URL}/meetings/internal`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Service": "ai-core",
+        },
+        body: JSON.stringify({
           userId: input.userId,
           title: input.title,
-          startTime: start,
-          endTime: end,
+          startTime: start.toISOString(),
+          endTime: end.toISOString(),
           attendees: input.attendees,
           description: input.description ?? null,
           location: input.location ?? null,
-          timezone: input.timezone ?? "UTC",
-          status: "scheduled",
-        },
+          timezone: input.timezone ?? "Asia/Kolkata",
+          agenda: input.agenda ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = (await response.json()) as { message?: string };
+        return {
+          success: false,
+          message: err.message ?? "Failed to schedule meeting.",
+        };
+      }
+
+      const meeting = (await response.json()) as {
+        id: string;
+        title: string;
+        startTime: string;
+      };
+
+      const timeStr = new Date(meeting.startTime).toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
       });
 
       return {
         success: true,
         meetingId: meeting.id,
-        message: `Meeting "${input.title}" scheduled for ${start.toLocaleString()} with ${input.attendees.join(", ")}. Meeting ID: ${meeting.id}`,
+        message:
+          `Meeting "${meeting.title}" scheduled for ${timeStr} IST. ` +
+          `I will call the attendees at the scheduled time.`,
       };
     } catch (err) {
-      logger.error({ err }, "Failed to create meeting");
+      logger.error({ err }, "Failed to schedule meeting");
       return {
         success: false,
         message: "Failed to schedule meeting. Please try again.",
@@ -105,7 +132,7 @@ export const scheduleMeetingTool: ToolDefinition<Input, Output> = {
           },
           description: {
             type: "string",
-            description: "Optional meeting description or agenda",
+            description: "Optional meeting description",
           },
           location: {
             type: "string",
@@ -113,7 +140,13 @@ export const scheduleMeetingTool: ToolDefinition<Input, Output> = {
           },
           timezone: {
             type: "string",
-            description: "IANA timezone for the meeting; defaults to the user's timezone if omitted",
+            description:
+              "IANA timezone for the meeting; defaults to Asia/Kolkata if omitted",
+          },
+          agenda: {
+            type: "string",
+            description:
+              "Questions or goals for the meeting call. What should the AI ask or achieve? e.g. 'Ask about project status, confirm deadline, check blockers'",
           },
         },
         required: ["title", "startTime", "attendees"],

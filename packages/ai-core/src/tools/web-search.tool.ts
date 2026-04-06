@@ -30,10 +30,21 @@ type Output = {
 };
 
 function extractPhone(text: string): string | undefined {
-  const match = text.match(
-    /(\+91[\s-]?\d{10}|0\d{10}|\b\d{10}\b|\+91-\d{5}-\d{5})/,
-  );
-  return match?.[0]?.replace(/[\s-]/g, "") ?? undefined;
+  const patterns = [
+    /\+91[\s-]?\d{5}[\s-]?\d{5}/,  // +91 XXXXX XXXXX
+    /\+91\d{10}/,                    // +91XXXXXXXXXX
+    /91\d{10}/,                      // 91XXXXXXXXXX
+    /0\d{10}/,                       // 0XXXXXXXXXX (landline)
+    /[6-9]\d{9}/,                    // Indian mobile starting 6-9
+    /\d{3,5}[\s-]\d{6,8}/,          // Generic landline patterns
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      return match[0].replace(/[\s-]/g, "");
+    }
+  }
+  return undefined;
 }
 
 export const webSearchTool: ToolDefinition<Input, Output> = {

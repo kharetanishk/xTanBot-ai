@@ -12,14 +12,17 @@ import {
   Easing,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useLocalSearchParams } from "expo-router";
 import { useAuthStore } from "../../../src/stores/auth.store";
 import { sendMessage } from "../../../src/api/conversations.api";
 import type { Message, StructuredPayload } from "../../../src/types/api.types";
 
 const SUGGESTED = [
-  "Who are my contacts?",
-  "Schedule a meeting",
-  "What time is it?",
+  "Find a gastroenterologist near me",
+  "Send birthday wish to a contact",
+  "Schedule a meeting with agenda",
+  "Set an alarm for 7 AM tomorrow",
+  "Search top 10 movies of 2025",
 ];
 
 function TypingDots() {
@@ -72,11 +75,17 @@ function TypingDots() {
 
 export default function ChatScreen() {
   const token = useAuthStore((s) => s.token);
+  const { prefill } = useLocalSearchParams<{ prefill?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useState(prefill ?? "");
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
+
+  // When navigated here with a prefill (e.g. from Story Call), populate the input once
+  useEffect(() => {
+    if (prefill) setInputText(prefill);
+  }, [prefill]);
 
   const submitMessage = useCallback(
     async (content: string) => {

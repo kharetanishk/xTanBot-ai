@@ -113,6 +113,86 @@ function buildVoiceSystemPrompt(ctx: AgentContext): string {
     strFromCtx(v, "contactName", strFromCtx(v, "attendeeName", "there"));
   const answeredBy = strFromCtx(v, "answeredBy", "");
 
+  // Appointment booking context (injected by make_call tool via Redis)
+  const calleeName = strFromCtx(v, "calleeName", contactName);
+  const appointmentDate = strFromCtx(v, "appointmentDate", "as soon as possible");
+  const appointmentTime = strFromCtx(v, "appointmentTime", "a convenient time");
+  const callPurpose = strFromCtx(v, "purpose", "");
+  const agenda = strFromCtx(v, "agenda", "");
+  const callType = strFromCtx(v, "callType", "");
+  const isAppointmentCall =
+    callPurpose.toLowerCase().includes("appointment") ||
+    callPurpose.toLowerCase().includes("booking");
+  const isStoryCall = callType === "story-call";
+  const story = strFromCtx(v, "story", "");
+  const mood = strFromCtx(v, "mood", "friendly");
+  const objective = strFromCtx(v, "objective", "");
+  const customMoodDescription = strFromCtx(v, "customMoodDescription", "");
+
+  if (isAppointmentCall) {
+    return `You are xTanBot, an AI assistant calling on behalf of ${userName}.
+
+THIS IS AN APPOINTMENT BOOKING CALL.
+You are calling: ${calleeName}
+Requested date: ${appointmentDate}
+Requested time: ${appointmentTime}
+Purpose: ${callPurpose}
+
+CALL SCRIPT — follow this exactly:
+1. "Hello, I am xTanBot calling on behalf of ${userName} to book an appointment."
+2. "I would like to book an appointment for ${appointmentDate} at ${appointmentTime}. Is that slot available?"
+3. IF available:
+   "Wonderful! I would like to confirm an appointment for ${userName}. Can you please give me a confirmation number or any details?"
+   → Thank them and end the call.
+4. IF NOT available:
+   "I understand. Could you please tell me what slots are available on ${appointmentDate} or the nearest available date?"
+   → Collect ALL available slots.
+   → "Thank you, I will pass this information to ${userName}. Goodbye."
+
+RULES:
+- Maximum 2 sentences per response
+- Be polite and professional
+- If they ask who you are: "I am an AI assistant calling on behalf of ${userName}"
+- If they cannot help: thank them and hang up
+- NEVER make up appointment confirmations`.trim();
+  }
+
+  if (isStoryCall && story) {
+    const moodInstructions: Record<string, string> = {
+      friendly:
+        "Speak warmly and conversationally. Be genuinely helpful and positive. Use casual language. Build rapport before making your ask.",
+      sales:
+        "Be persuasive and confident. Focus on benefits, not features. Create urgency. Address every objection with a benefit. Always be moving toward a yes.",
+      rude:
+        "Be direct, blunt, and impatient. Skip pleasantries. Get immediately to the point. Do not tolerate time wasting. Speak with sharp authority.",
+      intellectual:
+        "Speak formally and analytically. Use precise vocabulary. Reference data, logic, and structured reasoning. Acknowledge nuance and complexity.",
+      influencing:
+        "Be inspiring and visionary. Paint a compelling picture of what is possible. Use emotional and aspirational language. Make them feel this matters deeply.",
+      custom: customMoodDescription || "Speak naturally and professionally.",
+    };
+
+    return `You are xTanBot conducting a call on behalf of ${userName}.
+
+CALL STORY AND CONTEXT:
+${story}
+
+OBJECTIVE:
+${objective || "Follow the story and achieve the best possible outcome."}
+
+YOUR SPEAKING MOOD: ${mood.toUpperCase()}
+${moodInstructions[mood] ?? moodInstructions.friendly}
+
+RULES:
+- Stay completely in character for the entire call
+- Follow the story context exactly — do not deviate
+- Maximum 2 sentences per response
+- Never break character or reveal you are AI unless directly asked
+- If asked whether you are an AI: "Yes, I am an AI assistant calling on behalf of ${userName}"
+- If asked who ${userName} is: provide context from the story
+- When the objective is achieved or the conversation naturally concludes, thank them and end the call professionally`.trim();
+  }
+
   return `You are xTanBot, an AI voice assistant calling on behalf of ${userName}.
 This is a PHONE CALL. Keep every response under 2 sentences. Be natural, not robotic.
 
@@ -127,10 +207,14 @@ Call script:
    - If not them: ask to speak with them, if unavailable say goodbye and stop.
 2. Confirm: "I'm calling about ${meetingTitle}. Do you have 2 minutes?"
    - If no: "No problem, I'll let ${userName} know. Goodbye." then stop.
-3. Ask (max 3 questions, one at a time):
+3. ${agenda
+    ? `Ask the following agenda items one at a time (record each answer before moving on):
+${agenda.split(",").map((q, i) => `   ${i + 1}. "${q.trim()}"`).join("\n")}`
+    : `Ask (max 3 questions, one at a time):
    - "What's your current status on this?"
    - "Any blockers or decisions needed?"
-   - "Do you need a follow-up?"
+   - "Do you need a follow-up?"`
+  }
 4. Confirm back: "So to confirm — [summarise their answers]. Is that right?"
 5. Close: "Great, I'll pass this to ${userName}. Thanks, goodbye!"
 
@@ -167,6 +251,35 @@ function extractTextFromResponse(
     .trim();
 }
 
+/** Confirmation intent patterns (covers English and common Hindi shorthand). */
+const CONFIRM_PATTERNS = [
+  /\byes\b/i,
+  /\bgo\s+ahead\b/i,
+  /\bconfirm(ed)?\b/i,
+  /\bdo\s+it\b/i,
+  /\bproceed\b/i,
+  /\bcall\s+them\b/i,
+  /\byes,?\s*call\b/i,
+  /\bplace\s+the\s+call\b/i,
+  /\byes,?\s*place\b/i,
+  /\bbook\s+it\b/i,
+  /\bhaan\b/i,
+  /\bkar\s+do\b/i,
+  /\bsure\b/i,
+  /\bsounds?\s+good\b/i,
+];
+
+function lastUserText(ctx: AgentContext): string {
+  const lastUser = [...ctx.messages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return "";
+  return typeof lastUser.content === "string" ? lastUser.content.toLowerCase() : "";
+}
+
+function userConfirmed(ctx: AgentContext): boolean {
+  const text = lastUserText(ctx);
+  return CONFIRM_PATTERNS.some((p) => p.test(text));
+}
+
 /** Merge authenticated context into tool args so Claude never has to guess userId. */
 function enrichToolInput(
   ctx: AgentContext,
@@ -195,13 +308,18 @@ function enrichToolInput(
       enriched.timezone = tz;
     }
   }
+  // Inject confirmed=true for any tool that requiresConfirmation when the user has
+  // already agreed in natural language.
   if (toolName === "send_whatsapp") {
-    const lastUser = [...ctx.messages].reverse().find((m) => m.role === "user");
-    const text =
-      lastUser && typeof lastUser.content === "string" ? lastUser.content.trim() : "";
+    const text = lastUserText(ctx);
     if (/yes,?\s*send\s+the\s+whatsapp/i.test(text) && /confirmed/i.test(text)) {
       enriched.confirmed = true;
+    } else if (userConfirmed(ctx)) {
+      enriched.confirmed = true;
     }
+  }
+  if (toolName === "make_call" && userConfirmed(ctx)) {
+    enriched.confirmed = true;
   }
   return enriched;
 }
@@ -331,7 +449,11 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
 
           try {
             const enrichedInput = enrichToolInput(ctx, block.name, block.input);
-            const result = await toolRouter.dispatch(block.name, enrichedInput);
+            const result = await toolRouter.dispatch(
+              block.name,
+              enrichedInput,
+              !!(enrichedInput as Record<string, unknown>).confirmed,
+            );
 
             try {
               const toolResult = result as Record<string, unknown>;
@@ -352,28 +474,30 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
                 }));
 
                 const actions: ActionButton[] = [];
-                searchResults.forEach((r, i) => {
+                searchResults.slice(0, 3).forEach((r, i) => {
                   if (r.phone) {
-                    const shortTitle = r.title.slice(0, 20);
                     actions.push({
                       id: `call-${i}`,
-                      label: `📞 Call ${shortTitle}`,
+                      label: `📞 Call ${r.title.slice(0, 25)}`,
                       style: "primary",
-                      autoMessage: `Call ${r.phone} - ${r.title}`,
-                    });
-                    actions.push({
-                      id: `whatsapp-${i}`,
-                      label: `💬 WhatsApp ${r.title.slice(0, 15)}`,
-                      style: "secondary",
-                      autoMessage: `Send WhatsApp to ${r.phone} about ${r.title}`,
+                      autoMessage:
+                        `Yes, call ${r.phone} to book an appointment with ${r.title}`,
                     });
                   }
+                  // Always show an "info" button for each result
+                  actions.push({
+                    id: `info-${i}`,
+                    label: `ℹ️ ${r.title.slice(0, 20)}`,
+                    style: "secondary",
+                    autoMessage:
+                      `Tell me more about ${r.title} and how to book an appointment`,
+                  });
                 });
 
                 structuredPayload = {
                   type: "search_results",
                   results: cards,
-                  actions: actions.slice(0, 4),
+                  actions: actions.slice(0, 6),
                 };
               }
 
@@ -414,6 +538,47 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
                   structuredPayload = {
                     type: "whatsapp_sent",
                   };
+                }
+              }
+
+              if (block.name === "make_call") {
+                if (toolResult.requiresConfirmation === true) {
+                  const inp = block.input as {
+                    toNumber?: string;
+                    reason?: string;
+                    callContext?: { calleeName?: string; appointmentDate?: string; appointmentTime?: string };
+                  };
+                  const callee = inp.callContext?.calleeName ?? inp.toNumber ?? "them";
+                  const dateStr = inp.callContext?.appointmentDate ? ` on ${inp.callContext.appointmentDate}` : "";
+                  const timeStr = inp.callContext?.appointmentTime ? ` at ${inp.callContext.appointmentTime}` : "";
+                  structuredPayload = {
+                    type: "confirmation",
+                    actions: [
+                      {
+                        id: "confirm-call",
+                        label: "📞 Yes, Call",
+                        style: "primary",
+                        autoMessage: `Yes, go ahead and call ${callee}${dateStr}${timeStr}`,
+                      },
+                      {
+                        id: "cancel-call",
+                        label: "✗ Cancel",
+                        style: "danger",
+                        autoMessage: "No, cancel the call",
+                      },
+                    ],
+                    confirmationData: {
+                      toPhone: inp.toNumber ?? "",
+                      contactName: callee,
+                      messagePreview: `${inp.reason ?? "Call"}${dateStr}${timeStr}`,
+                      confirmMessage: `Yes, go ahead and call ${callee}${dateStr}${timeStr}`,
+                      cancelMessage: "No, cancel the call",
+                    },
+                  };
+                } else if (
+                  (toolResult as { success?: boolean }).success === true
+                ) {
+                  structuredPayload = { type: "none" };
                 }
               }
 
