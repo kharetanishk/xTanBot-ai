@@ -1,5 +1,6 @@
 import { conversationRepository } from "@xtanbot/db";
 import { runAgent } from "@xtanbot/ai-core";
+import type { StructuredPayload } from "@xtanbot/ai-core";
 import { createLogger } from "@xtanbot/logger";
 
 const logger = createLogger("ConversationService");
@@ -68,7 +69,11 @@ export const conversationService = {
     userId: string,
     userContent: string,
     onChunk: (text: string) => void,
-  ): Promise<{ fullText: string; toolsUsed: string[] }> {
+  ): Promise<{
+    fullText: string;
+    toolsUsed: string[];
+    structuredPayload?: StructuredPayload;
+  }> {
     const conv = await conversationRepository.findById(conversationId);
     if (!conv || conv.userId !== userId) {
       throw new Error("Conversation not found");
@@ -96,6 +101,10 @@ export const conversationService = {
     });
 
     onChunk(response.text);
-    return { fullText: response.text, toolsUsed: response.toolsUsed };
+    return {
+      fullText: response.text,
+      toolsUsed: response.toolsUsed,
+      structuredPayload: response.structuredPayload,
+    };
   },
 };

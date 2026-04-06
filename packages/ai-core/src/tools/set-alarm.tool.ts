@@ -7,7 +7,7 @@ const logger = createLogger("SetAlarmTool");
 
 const inputSchema = z.object({
   userId: z.string().uuid(),
-  scheduledAt: z.string().datetime(),
+  scheduledAt: z.string().datetime({ offset: true }),
   label: z.string().optional().default("Wake up alarm"),
 });
 

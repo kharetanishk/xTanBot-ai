@@ -4,6 +4,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "mobile": "expo start apps/mobile",
+    "mobile:web": "expo start apps/mobile --web",
+    "mobile:android": "expo start apps/mobile --android",
+    "mobile:ios": "expo start apps/mobile --ios",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

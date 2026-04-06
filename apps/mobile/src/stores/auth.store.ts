@@ -60,12 +60,11 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({
           token: null,
           user: null,
-          isLoading: false,
           isAuthenticated: false,
         });
         return;
       }
-      set({ token, isLoading: false, isAuthenticated: true });
+      set({ token, isAuthenticated: true });
       try {
         const res = await fetch(`${API_BASE_URL}/users/me`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -85,7 +84,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         // Network error — keep token; user may stay null until useMe succeeds
       }
     } catch {
-      set({ isLoading: false, isAuthenticated: false });
+      set({ token: null, user: null, isAuthenticated: false });
+    } finally {
+      set({ isLoading: false });
     }
   },
 }));

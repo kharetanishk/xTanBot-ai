@@ -6,7 +6,15 @@ import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
 import { counter } from "@xtanbot/observability";
 import type Anthropic from "@anthropic-ai/sdk";
-import type { AgentContext, AgentResponse, AgentMessage } from "./types";
+import type {
+  AgentContext,
+  AgentResponse,
+  AgentMessage,
+  StructuredPayload,
+  ActionButton,
+  SearchResultCard,
+} from "./types";
+import type { SearchResult } from "./tools/web-search.tool";
 
 const logger = createLogger("AgentKernel");
 
@@ -187,6 +195,14 @@ function enrichToolInput(
       enriched.timezone = tz;
     }
   }
+  if (toolName === "send_whatsapp") {
+    const lastUser = [...ctx.messages].reverse().find((m) => m.role === "user");
+    const text =
+      lastUser && typeof lastUser.content === "string" ? lastUser.content.trim() : "";
+    if (/yes,?\s*send\s+the\s+whatsapp/i.test(text) && /confirmed/i.test(text)) {
+      enriched.confirmed = true;
+    }
+  }
   return enriched;
 }
 
@@ -201,6 +217,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let iterations = 0;
+  let structuredPayload: StructuredPayload = { type: "none" };
 
   const isVoice = Boolean(ctx.callSid);
   const selectedModel = isVoice ? VOICE_MODEL : selectModel(ctx.messages);
@@ -296,6 +313,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         },
+        structuredPayload,
       };
     }
 
@@ -314,6 +332,122 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
           try {
             const enrichedInput = enrichToolInput(ctx, block.name, block.input);
             const result = await toolRouter.dispatch(block.name, enrichedInput);
+
+            try {
+              const toolResult = result as Record<string, unknown>;
+
+              if (
+                block.name === "web_search" &&
+                toolResult.success === true &&
+                Array.isArray(toolResult.results)
+              ) {
+                const searchResults = toolResult.results as SearchResult[];
+                const cards: SearchResultCard[] = searchResults.map((r) => ({
+                  title: r.title,
+                  snippet: r.snippet,
+                  phone: r.phone,
+                  address: r.address,
+                  rating: r.rating,
+                  url: r.url,
+                }));
+
+                const actions: ActionButton[] = [];
+                searchResults.forEach((r, i) => {
+                  if (r.phone) {
+                    const shortTitle = r.title.slice(0, 20);
+                    actions.push({
+                      id: `call-${i}`,
+                      label: `📞 Call ${shortTitle}`,
+                      style: "primary",
+                      autoMessage: `Call ${r.phone} - ${r.title}`,
+                    });
+                    actions.push({
+                      id: `whatsapp-${i}`,
+                      label: `💬 WhatsApp ${r.title.slice(0, 15)}`,
+                      style: "secondary",
+                      autoMessage: `Send WhatsApp to ${r.phone} about ${r.title}`,
+                    });
+                  }
+                });
+
+                structuredPayload = {
+                  type: "search_results",
+                  results: cards,
+                  actions: actions.slice(0, 4),
+                };
+              }
+
+              if (block.name === "send_whatsapp") {
+                if (toolResult.requiresConfirmation === true && toolResult.confirmationData) {
+                  const cd = toolResult.confirmationData as {
+                    toPhone: string;
+                    contactName: string;
+                    messagePreview: string;
+                  };
+                  structuredPayload = {
+                    type: "confirmation",
+                    actions: [
+                      {
+                        id: "confirm-send",
+                        label: "✓ Yes, Send",
+                        style: "primary",
+                        autoMessage:
+                          `Yes, send the WhatsApp to ${cd.contactName} at ${cd.toPhone} confirmed`,
+                      },
+                      {
+                        id: "cancel-send",
+                        label: "✗ Cancel",
+                        style: "danger",
+                        autoMessage: "No, cancel the WhatsApp",
+                      },
+                    ],
+                    confirmationData: {
+                      toPhone: cd.toPhone,
+                      contactName: cd.contactName,
+                      messagePreview: cd.messagePreview,
+                      confirmMessage:
+                        `Yes, send the WhatsApp to ${cd.contactName} at ${cd.toPhone} confirmed`,
+                      cancelMessage: "No, cancel the WhatsApp",
+                    },
+                  };
+                } else if (toolResult.sent === true) {
+                  structuredPayload = {
+                    type: "whatsapp_sent",
+                  };
+                }
+              }
+
+              if (block.name === "get_location") {
+                const loc = toolResult as {
+                  city: string;
+                  state: string;
+                  googleMapsUrl: string;
+                  formatted: string;
+                };
+                if (loc.city && loc.state && loc.googleMapsUrl && loc.formatted) {
+                  structuredPayload = {
+                    type: "location",
+                    locationData: {
+                      city: loc.city,
+                      state: loc.state,
+                      googleMapsUrl: loc.googleMapsUrl,
+                      formatted: loc.formatted,
+                    },
+                    actions: [
+                      {
+                        id: "send-location",
+                        label: "📍 Send My Location",
+                        style: "primary",
+                        autoMessage: `Send my location (${loc.formatted}) via WhatsApp`,
+                      },
+                    ],
+                  };
+                }
+              }
+            } catch (payloadErr) {
+              logger.warn({ payloadErr }, "Failed to capture structured payload");
+            }
+
             return {
               type: "tool_result" as const,
               tool_use_id: block.id,
@@ -373,6 +507,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         },
+        structuredPayload,
       };
     }
 

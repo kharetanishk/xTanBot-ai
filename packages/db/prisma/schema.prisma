@@ -10,14 +10,15 @@ datasource db {
 // ─── Users ────────────────────────────────────────────────
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  phone     String?
-  timezone  String   @default("Asia/Kolkata")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  timezone     String   @default("Asia/Kolkata")
+  passwordHash String?  @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   calls         Call[]
   meetings      Meeting[]

@@ -2,7 +2,7 @@ import { prisma } from "../client";
 import type { CreateUser, UpdateUser } from "@xtanbot/zod-schemas";
 
 export const userRepository = {
-  async create(data: CreateUser) {
+  async create(data: CreateUser & { passwordHash: string }) {
     return prisma.user.create({ data });
   },
 

@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthStore } from "../../../src/stores/auth.store";
 import { sendMessage } from "../../../src/api/conversations.api";
-import type { Message } from "../../../src/types/api.types";
+import type { Message, StructuredPayload } from "../../../src/types/api.types";
 
 const SUGGESTED = [
   "Who are my contacts?",
@@ -78,60 +78,162 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
 
-  const handleSend = useCallback(async () => {
-    const content = inputText.trim();
-    if (!content || isStreaming) return;
-    if (!token) {
-      return;
-    }
+  const submitMessage = useCallback(
+    async (content: string) => {
+      const trimmed = content.trim();
+      if (!trimmed || isStreaming || !token) return;
 
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      conversationId: conversationId ?? "",
-      role: "user",
-      content,
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+      const userMessage: Message = {
+        id: `user-${Date.now()}`,
+        conversationId: conversationId ?? "",
+        role: "user",
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setIsStreaming(true);
+
+      const streamingMessage: Message = {
+        id: "streaming",
+        conversationId: conversationId ?? "",
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, streamingMessage]);
+
+      const onChunk = (chunk: string) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === "streaming"
+              ? { ...m, content: (m.content ?? "") + chunk }
+              : m,
+          ),
+        );
+      };
+
+      const onDone = (newId: string, payload?: StructuredPayload | null) => {
+        setIsStreaming(false);
+        setMessages((prev) => {
+          const streaming = prev.find((m) => m.id === "streaming");
+          if (!streaming) return prev;
+          const finalMessage: Message = {
+            ...streaming,
+            id: `assistant-${Date.now()}`,
+            structuredPayload: payload ?? null,
+          };
+          return prev.map((m) => (m.id === "streaming" ? finalMessage : m));
+        });
+        if (newId) setConversationId(newId);
+      };
+
+      await sendMessage(token, conversationId, trimmed, onChunk, onDone);
+    },
+    [isStreaming, token, conversationId],
+  );
+
+  const handleSend = useCallback(() => {
+    const c = inputText.trim();
+    if (!c) return;
     setInputText("");
-    setIsStreaming(true);
+    void submitMessage(c);
+  }, [inputText, submitMessage]);
 
-    const streamingMessage: Message = {
-      id: "streaming",
-      conversationId: conversationId ?? "",
-      role: "assistant",
-      content: "",
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, streamingMessage]);
+  const handleActionPress = useCallback(
+    (autoMessage: string) => {
+      void submitMessage(autoMessage);
+    },
+    [submitMessage],
+  );
 
-    const onChunk = (chunk: string) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === "streaming"
-            ? { ...m, content: (m.content ?? "") + chunk }
-            : m,
-        ),
-      );
-    };
-    const onDone = () => {
-      setIsStreaming(false);
-      setMessages((prev) => {
-        const streaming = prev.find((m) => m.id === "streaming");
-        if (!streaming) return prev;
-        const finalMessage: Message = {
-          ...streaming,
-          id: `assistant-${Date.now()}`,
-        };
-        return prev.map((m) => (m.id === "streaming" ? finalMessage : m));
-      });
-    };
+  function renderStructuredPayload(payload: StructuredPayload) {
+    if (payload.type === "none") return null;
 
-    await sendMessage(token, conversationId, content, onChunk, (newId) => {
-      onDone();
-      if (newId) setConversationId(newId);
-    });
-  }, [inputText, isStreaming, token, conversationId]);
+    return (
+      <View style={styles.payloadContainer}>
+        {payload.type === "search_results" && payload.results && (
+          <View>
+            {payload.results.map((r, i) => (
+              <View key={`r-${i}`} style={styles.resultCard}>
+                <Text style={styles.resultTitle} numberOfLines={2}>
+                  {r.title}
+                </Text>
+                {r.rating ? (
+                  <Text style={styles.resultRating}>⭐ {r.rating}</Text>
+                ) : null}
+                {r.address ? (
+                  <Text style={styles.resultMeta}>📍 {r.address}</Text>
+                ) : null}
+                {r.phone ? (
+                  <Text style={styles.resultPhone}>📞 {r.phone}</Text>
+                ) : null}
+                {r.snippet ? (
+                  <Text style={styles.resultSnippet} numberOfLines={2}>
+                    {r.snippet}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {payload.type === "confirmation" && payload.confirmationData && (
+          <View style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>CONFIRM ACTION</Text>
+            <Text style={styles.confirmTo}>
+              To: {payload.confirmationData.contactName} (
+              {payload.confirmationData.toPhone})
+            </Text>
+            <Text style={styles.confirmPreview}>
+              {`"${payload.confirmationData.messagePreview}"`}
+            </Text>
+          </View>
+        )}
+
+        {payload.type === "location" && payload.locationData && (
+          <View style={styles.locationCard}>
+            <Text style={styles.locationText}>
+              📍 {payload.locationData.formatted}
+            </Text>
+          </View>
+        )}
+
+        {payload.type === "whatsapp_sent" && (
+          <View style={styles.sentCard}>
+            <Text style={styles.sentText}>✓ WhatsApp Sent Successfully</Text>
+          </View>
+        )}
+
+        {payload.actions && payload.actions.length > 0 && (
+          <View style={styles.actionsRow}>
+            {payload.actions.map((action) => (
+              <Pressable
+                key={action.id}
+                style={[
+                  styles.actionBtn,
+                  action.style === "primary" && styles.actionBtnPrimary,
+                  action.style === "danger" && styles.actionBtnDanger,
+                  action.style === "secondary" && styles.actionBtnSecondary,
+                ]}
+                onPress={() => handleActionPress(action.autoMessage)}
+              >
+                <Text
+                  style={[
+                    styles.actionBtnText,
+                    action.style === "primary" && styles.actionBtnTextPrimary,
+                    action.style === "danger" && styles.actionBtnTextDanger,
+                    action.style === "secondary" && styles.actionBtnTextSecondary,
+                  ]}
+                >
+                  {action.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  }
 
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
@@ -156,10 +258,16 @@ export default function ChatScreen() {
             {showTyping ? (
               <TypingDots />
             ) : (
-              <Text style={isUser ? styles.textUser : styles.textAi}>
-                {item.content}
-                {isStreamingRow && isStreaming && item.content ? "▊" : ""}
-              </Text>
+              <>
+                <Text style={isUser ? styles.textUser : styles.textAi}>
+                  {item.content}
+                  {isStreamingRow && isStreaming && item.content ? "▊" : ""}
+                </Text>
+                {!isUser &&
+                  item.structuredPayload &&
+                  item.structuredPayload.type !== "none" &&
+                  renderStructuredPayload(item.structuredPayload)}
+              </>
             )}
           </View>
           <Text
@@ -176,7 +284,7 @@ export default function ChatScreen() {
         </View>
       );
     },
-    [isStreaming],
+    [isStreaming, handleActionPress],
   );
 
   const canSend = Boolean(inputText.trim()) && !isStreaming;
@@ -445,5 +553,137 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "900",
     color: "#000",
+  },
+  payloadContainer: {
+    marginTop: 8,
+    maxWidth: 300,
+  },
+  resultCard: {
+    backgroundColor: "#f9f9f9",
+    borderWidth: 2,
+    borderColor: "#000",
+    padding: 10,
+    marginBottom: 8,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    shadowColor: "#000",
+    elevation: 2,
+  },
+  resultTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#000",
+    marginBottom: 4,
+  },
+  resultRating: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 2,
+  },
+  resultMeta: {
+    fontSize: 11,
+    color: "#666",
+    marginBottom: 2,
+  },
+  resultPhone: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6366f1",
+    marginBottom: 2,
+  },
+  resultSnippet: {
+    fontSize: 11,
+    color: "#888",
+    lineHeight: 15,
+  },
+  confirmCard: {
+    backgroundColor: "#fff9e6",
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+    padding: 10,
+    marginBottom: 8,
+  },
+  confirmTitle: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#000",
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  confirmTo: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#000",
+    marginBottom: 4,
+  },
+  confirmPreview: {
+    fontSize: 12,
+    color: "#444",
+    fontStyle: "italic",
+  },
+  locationCard: {
+    backgroundColor: "#f0f9ff",
+    borderWidth: 2,
+    borderColor: "#6366f1",
+    padding: 10,
+    marginBottom: 8,
+  },
+  locationText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#000",
+  },
+  sentCard: {
+    backgroundColor: "#f0fdf4",
+    borderWidth: 2,
+    borderColor: "#10B981",
+    padding: 10,
+    marginBottom: 8,
+  },
+  sentText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#10B981",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
+  actionBtn: {
+    borderWidth: 2,
+    borderColor: "#000",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    shadowColor: "#000",
+    elevation: 2,
+  },
+  actionBtnPrimary: {
+    backgroundColor: "#FBBF24",
+  },
+  actionBtnDanger: {
+    backgroundColor: "#EF4444",
+  },
+  actionBtnSecondary: {
+    backgroundColor: "#6366f1",
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#000",
+  },
+  actionBtnTextPrimary: {
+    color: "#000",
+  },
+  actionBtnTextDanger: {
+    color: "#fff",
+  },
+  actionBtnTextSecondary: {
+    color: "#fff",
   },
 });

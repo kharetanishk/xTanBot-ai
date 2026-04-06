@@ -8,4 +8,7 @@ export type {
   AgentResponse,
   ToolDefinition,
   ClaudeToolDef,
+  StructuredPayload,
+  ActionButton,
+  SearchResultCard,
 } from "./types";

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -17,15 +18,8 @@ import { API_BASE_URL } from "../../../src/constants/config";
 import { authApi } from "../../../src/api/auth.api";
 import { queryKeys } from "../../../src/constants/queryKeys";
 import { getApiError } from "../../../src/api/client";
-
-const TIMEZONE_OPTIONS = [
-  "Asia/Kolkata",
-  "UTC",
-  "America/New_York",
-  "Europe/London",
-  "Asia/Dubai",
-  "Asia/Singapore",
-] as const;
+import { TIMEZONE_OPTIONS } from "../../../src/constants/timezones";
+import { toastError, toastSuccess } from "../../../src/utils/toast";
 
 function getInitials(name: string): string {
   return name
@@ -81,7 +75,7 @@ export default function SettingsScreen() {
       setEditing(false);
     },
     onError: (err) => {
-      Alert.alert("Update failed", getApiError(err));
+      toastError(getApiError(err), "Update failed");
     },
   });
 
@@ -101,17 +95,27 @@ export default function SettingsScreen() {
   };
 
   const handleSignOut = () => {
+    const finish = async () => {
+      await clearAuth();
+      queryClient.clear();
+      toastSuccess("You are signed out.", "Signed out");
+      router.replace("/");
+    };
+
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm("Sign out from xTanBot?")) {
+        void finish();
+      }
+      return;
+    }
+
     Alert.alert("Sign out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign out",
         style: "destructive",
-        onPress: async () => {
-          await clearAuth();
-          queryClient.clear();
-          setTimeout(() => {
-            router.replace("/(auth)/login");
-          }, 100);
+        onPress: () => {
+          void finish();
         },
       },
     ]);

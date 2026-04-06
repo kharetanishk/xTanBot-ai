@@ -22,6 +22,42 @@ export type AgentContext = {
   };
 };
 
+export type ActionButton = {
+  id: string;
+  label: string;
+  style: "primary" | "danger" | "secondary";
+  /** When tapped, this text is sent as a message */
+  autoMessage: string;
+};
+
+export type SearchResultCard = {
+  title: string;
+  snippet: string;
+  phone?: string;
+  address?: string;
+  rating?: string;
+  url?: string;
+};
+
+export type StructuredPayload = {
+  type: "search_results" | "confirmation" | "whatsapp_sent" | "location" | "none";
+  results?: SearchResultCard[];
+  actions?: ActionButton[];
+  confirmationData?: {
+    toPhone: string;
+    contactName: string;
+    messagePreview: string;
+    confirmMessage: string;
+    cancelMessage: string;
+  };
+  locationData?: {
+    city: string;
+    state: string;
+    googleMapsUrl: string;
+    formatted: string;
+  };
+};
+
 export type AgentResponse = {
   readonly text: string;
   readonly toolsUsed: string[];
@@ -30,6 +66,7 @@ export type AgentResponse = {
     inputTokens: number;
     outputTokens: number;
   };
+  readonly structuredPayload?: StructuredPayload;
 };
 
 export type ConfirmationRequired = {

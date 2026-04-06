@@ -38,6 +38,41 @@ export interface Alarm {
   updatedAt: string;
 }
 
+export type ActionButton = {
+  id: string;
+  label: string;
+  style: "primary" | "danger" | "secondary";
+  autoMessage: string;
+};
+
+export type SearchResultCard = {
+  title: string;
+  snippet: string;
+  phone?: string;
+  address?: string;
+  rating?: string;
+  url?: string;
+};
+
+export type StructuredPayload = {
+  type: "search_results" | "confirmation" | "whatsapp_sent" | "location" | "none";
+  results?: SearchResultCard[];
+  actions?: ActionButton[];
+  confirmationData?: {
+    toPhone: string;
+    contactName: string;
+    messagePreview: string;
+    confirmMessage: string;
+    cancelMessage: string;
+  };
+  locationData?: {
+    city: string;
+    state: string;
+    googleMapsUrl: string;
+    formatted: string;
+  };
+};
+
 export interface Meeting {
   id: string;
   userId: string;
@@ -58,6 +93,7 @@ export interface Message {
   content: string;
   toolsUsed?: string[];
   createdAt: string;
+  structuredPayload?: StructuredPayload | null;
 }
 
 export interface Conversation {

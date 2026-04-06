@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Alarm } from "../../../src/types/api.types";
@@ -18,36 +19,19 @@ import {
   useCreateAlarm,
   useDeleteAlarm,
 } from "../../../src/hooks/useAlarms";
-
-const APP_TZ = "Asia/Kolkata";
+import { getApiError } from "../../../src/api/client";
+import { useAuthStore } from "../../../src/stores/auth.store";
+import { useMe } from "../../../src/hooks/useAuth";
+import {
+  zonedYmdFromOffsetDays,
+  zonedWallTimeToUtcIso,
+  formatDateTimeInTimeZone,
+  formatClockNowInTimeZone,
+} from "../../../src/utils/date.utils";
+import { TIMEZONE_OPTIONS } from "../../../src/constants/timezones";
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-function istYmdFromOffsetDays(offsetDays: number): string {
-  const shifted = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(shifted);
-}
-
-function toISTIso(ymd: string, hour: number, minute: number): string {
-  return `${ymd}T${pad2(hour)}:${pad2(minute)}:00+05:30`;
-}
-
-function formatAlarmTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-IN", {
-    timeZone: APP_TZ,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -64,9 +48,37 @@ function StatusBadge({ status }: { status: Alarm["status"] }) {
 
 export default function AlarmsScreen() {
   const insets = useSafeAreaInsets();
-  const { data: alarms = [], isLoading } = useAlarms();
+  const storeUser = useAuthStore((s) => s.user);
+  const { data: apiUser } = useMe();
+  const profileTz =
+    apiUser?.timezone ?? storeUser?.timezone ?? "Asia/Kolkata";
+
+  const {
+    data: alarmsRaw,
+    isFetching,
+    isError,
+    error: alarmsError,
+    refetch,
+  } = useAlarms();
+  const alarms = alarmsRaw ?? [];
   const createAlarm = useCreateAlarm();
   const deleteAlarm = useDeleteAlarm();
+
+  const [alarmTimeZone, setAlarmTimeZone] = useState(profileTz);
+  useEffect(() => {
+    setAlarmTimeZone(profileTz);
+  }, [profileTz]);
+
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const clockText = useMemo(
+    () => formatClockNowInTimeZone(alarmTimeZone),
+    [alarmTimeZone, tick],
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [dayOffset, setDayOffset] = useState<0 | 1>(0);
@@ -74,7 +86,10 @@ export default function AlarmsScreen() {
   const [minute, setMinute] = useState(0);
   const [label, setLabel] = useState("");
 
-  const ymd = useMemo(() => istYmdFromOffsetDays(dayOffset), [dayOffset]);
+  const ymd = useMemo(
+    () => zonedYmdFromOffsetDays(alarmTimeZone, dayOffset),
+    [alarmTimeZone, dayOffset],
+  );
 
   const openModal = useCallback(() => {
     setDayOffset(0);
@@ -85,10 +100,23 @@ export default function AlarmsScreen() {
   }, []);
 
   const submitAlarm = useCallback(() => {
-    const scheduledAt = toISTIso(ymd, hour, minute);
-    const at = new Date(scheduledAt);
-    if (at <= new Date()) {
-      Alert.alert("Invalid time", "Choose a time in the future.");
+    let scheduledAt: string;
+    try {
+      scheduledAt = zonedWallTimeToUtcIso(ymd, hour, minute, alarmTimeZone);
+    } catch {
+      Alert.alert("Invalid time", "Could not build that date in your timezone.");
+      return;
+    }
+    const atMs = new Date(scheduledAt).getTime();
+    if (Number.isNaN(atMs)) {
+      Alert.alert("Invalid time", "Could not read that date/time. Try again.");
+      return;
+    }
+    if (atMs <= Date.now()) {
+      Alert.alert(
+        "Invalid time",
+        `Choose a time in the future (clock is in ${alarmTimeZone}).`,
+      );
       return;
     }
     createAlarm.mutate(
@@ -98,12 +126,12 @@ export default function AlarmsScreen() {
       },
       {
         onSuccess: () => setModalOpen(false),
-        onError: () => {
-          Alert.alert("Error", "Could not set alarm.");
+        onError: (err) => {
+          Alert.alert("Could not set alarm", getApiError(err));
         },
       },
     );
-  }, [ymd, hour, minute, label, createAlarm]);
+  }, [ymd, hour, minute, label, alarmTimeZone, createAlarm]);
 
   const onDelete = useCallback(
     (id: string) => {
@@ -125,7 +153,9 @@ export default function AlarmsScreen() {
         <Text style={styles.cardEmoji}>⏰</Text>
         <View style={styles.cardMain}>
           <Text style={styles.cardLabel}>{item.label}</Text>
-          <Text style={styles.cardTime}>{formatAlarmTime(item.scheduledAt)}</Text>
+          <Text style={styles.cardTime}>
+            {formatDateTimeInTimeZone(item.scheduledAt, alarmTimeZone)}
+          </Text>
           <StatusBadge status={item.status} />
         </View>
         <Pressable
@@ -136,8 +166,41 @@ export default function AlarmsScreen() {
         </Pressable>
       </View>
     ),
-    [onDelete],
+    [onDelete, alarmTimeZone],
   );
+
+  const listEmpty = useMemo(() => {
+    if (isError) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>COULD NOT LOAD</Text>
+          <Text style={styles.emptySub}>{getApiError(alarmsError)}</Text>
+          <Pressable
+            onPress={() => refetch()}
+            style={({ pressed }) => [styles.retryBtn, pressed && styles.retryPressed]}
+          >
+            <Text style={styles.retryText}>TAP TO RETRY</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    if (isFetching && alarms.length === 0) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.loadingHint}>Loading alarms…</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyEmoji}>⏰</Text>
+        <Text style={styles.emptyTitle}>NO ALARMS SET</Text>
+        <Text style={styles.emptySub}>
+          Tap + or ask the AI to set an alarm
+        </Text>
+      </View>
+    );
+  }, [isError, isFetching, alarms.length, alarmsError, refetch]);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 16 }]}>
@@ -151,30 +214,69 @@ export default function AlarmsScreen() {
         </Pressable>
       </View>
 
-      {isLoading ? (
-        <ActivityIndicator color="#FBBF24" style={{ marginTop: 32 }} />
-      ) : alarms.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyEmoji}>⏰</Text>
-          <Text style={styles.emptyTitle}>NO ALARMS SET</Text>
-          <Text style={styles.emptySub}>
-            Tap + or ask the AI to set an alarm
-          </Text>
+      <View style={styles.clockCard}>
+        <Text style={styles.clockLabel}>NOW ({alarmTimeZone})</Text>
+        <Text style={styles.clockValue}>{clockText}</Text>
+        <Text style={styles.clockHint}>
+          Alarms use this timezone. Change below or update your profile in
+          Settings.
+        </Text>
+        <Text style={styles.modalSection}>ALARM TIMEZONE</Text>
+        <View style={styles.tzWrap}>
+          {TIMEZONE_OPTIONS.map((tz) => (
+            <Pressable
+              key={tz}
+              onPress={() => setAlarmTimeZone(tz)}
+              style={[
+                styles.tzChip,
+                alarmTimeZone === tz && styles.tzChipOn,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tzChipText,
+                  alarmTimeZone === tz && styles.tzChipTextOn,
+                ]}
+                numberOfLines={1}
+              >
+                {tz.replace(/_/g, " ")}
+              </Text>
+            </Pressable>
+          ))}
         </View>
-      ) : (
-        <FlatList
-          data={alarms}
-          keyExtractor={(a) => a.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      </View>
+
+      <FlatList
+        style={styles.list}
+        data={alarms}
+        keyExtractor={(a) => a.id}
+        renderItem={renderItem}
+        ListEmptyComponent={listEmpty}
+        contentContainerStyle={
+          alarms.length === 0 ? styles.listEmptyContent : styles.listContent
+        }
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isFetching}
+            onRefresh={() => refetch()}
+            tintColor="#FBBF24"
+          />
+        }
+      />
 
       <Modal visible={modalOpen} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalCard}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <Text style={styles.modalTitle}>SET ALARM</Text>
+            <Text style={styles.modalTzNote}>
+              Using timezone: {alarmTimeZone}
+            </Text>
 
             <Text style={styles.modalSection}>DATE</Text>
             <View style={styles.dayRow}>
@@ -211,7 +313,9 @@ export default function AlarmsScreen() {
                 </Text>
               </Pressable>
             </View>
-            <Text style={styles.ymdHint}>{ymd} (IST)</Text>
+            <Text style={styles.ymdHint}>
+              {ymd} · wall time in {alarmTimeZone}
+            </Text>
 
             <Text style={styles.modalSection}>HOUR</Text>
             <ScrollView
@@ -224,10 +328,7 @@ export default function AlarmsScreen() {
                 <Pressable
                   key={h}
                   onPress={() => setHour(h)}
-                  style={[
-                    styles.numChip,
-                    hour === h && styles.numChipOn,
-                  ]}
+                  style={[styles.numChip, hour === h && styles.numChipOn]}
                 >
                   <Text
                     style={[
@@ -252,10 +353,7 @@ export default function AlarmsScreen() {
                 <Pressable
                   key={m}
                   onPress={() => setMinute(m)}
-                  style={[
-                    styles.numChip,
-                    minute === m && styles.numChipOn,
-                  ]}
+                  style={[styles.numChip, minute === m && styles.numChipOn]}
                 >
                   <Text
                     style={[
@@ -279,7 +377,9 @@ export default function AlarmsScreen() {
             />
 
             <Pressable
-              onPress={submitAlarm}
+              onPress={() => {
+                submitAlarm();
+              }}
               disabled={createAlarm.isPending}
               style={({ pressed }) => [
                 styles.submitBtn,
@@ -300,7 +400,7 @@ export default function AlarmsScreen() {
             >
               <Text style={styles.modalCancelText}>CANCEL</Text>
             </Pressable>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -318,7 +418,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 12,
   },
   headerTitle: {
     fontSize: 28,
@@ -326,6 +426,50 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     letterSpacing: -0.5,
   },
+  clockCard: {
+    backgroundColor: "#1a1a1a",
+    borderWidth: 3,
+    borderColor: "#FBBF24",
+    padding: 14,
+    marginBottom: 16,
+  },
+  clockLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#9ca3af",
+    letterSpacing: 1,
+  },
+  clockValue: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#fff",
+    marginTop: 4,
+  },
+  clockHint: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 8,
+    lineHeight: 16,
+  },
+  tzWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+  },
+  tzChip: {
+    borderWidth: 2,
+    borderColor: "#fff",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: "transparent",
+  },
+  tzChipOn: {
+    backgroundColor: "#FBBF24",
+    borderColor: "#000",
+  },
+  tzChipText: { fontSize: 10, fontWeight: "700", color: "#fff", maxWidth: 120 },
+  tzChipTextOn: { color: "#000", fontWeight: "900" },
   addBtn: {
     width: 48,
     height: 48,
@@ -350,7 +494,9 @@ const styles = StyleSheet.create({
     color: "#000",
     marginTop: -2,
   },
+  list: { flex: 1 },
   listContent: { paddingBottom: 24 },
+  listEmptyContent: { flexGrow: 1, paddingBottom: 24 },
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -413,8 +559,13 @@ const styles = StyleSheet.create({
   },
   empty: {
     alignItems: "center",
-    marginTop: 48,
+    marginTop: 32,
     paddingHorizontal: 24,
+  },
+  loadingHint: {
+    fontSize: 14,
+    color: "#6b7280",
+    fontWeight: "600",
   },
   emptyEmoji: { fontSize: 56, marginBottom: 12 },
   emptyTitle: {
@@ -430,10 +581,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 20,
   },
+  retryBtn: {
+    marginTop: 16,
+    backgroundColor: "#FBBF24",
+    borderWidth: 3,
+    borderColor: "#000",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  retryPressed: { opacity: 0.9 },
+  retryText: { fontWeight: "900", color: "#000" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.85)",
     justifyContent: "flex-end",
+  },
+  modalScroll: {
+    maxHeight: "92%",
   },
   modalCard: {
     backgroundColor: "#fff",
@@ -443,14 +607,19 @@ const styles = StyleSheet.create({
     borderColor: "#000",
     padding: 20,
     paddingBottom: 32,
-    maxHeight: "92%",
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "900",
     color: "#000",
-    marginBottom: 16,
+    marginBottom: 6,
     letterSpacing: 1,
+  },
+  modalTzNote: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 12,
   },
   modalSection: {
     fontSize: 11,

@@ -1,5 +1,6 @@
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import { hrefDashboardCalls, hrefDashboardMeetings } from "../../../src/navigation/href";
 import { useAuthStore } from "../../../src/stores/auth.store";
 import { useMe } from "../../../src/hooks/useAuth";
 import { useCalls } from "../../../src/hooks/useCalls";
@@ -102,7 +103,7 @@ export default function DashboardScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>RECENT CALLS</Text>
-          <Pressable onPress={() => router.push("/(app)/(tabs)/calls")}>
+          <Pressable onPress={() => router.push(hrefDashboardCalls())}>
             <Text style={styles.seeAll}>See all</Text>
           </Pressable>
         </View>
@@ -124,7 +125,7 @@ export default function DashboardScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>UPCOMING</Text>
-          <Pressable onPress={() => router.push("/(app)/(tabs)/meetings")}>
+          <Pressable onPress={() => router.push(hrefDashboardMeetings())}>
             <Text style={styles.seeAll}>See all</Text>
           </Pressable>
         </View>

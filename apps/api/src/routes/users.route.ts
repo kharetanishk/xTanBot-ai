@@ -1,15 +1,44 @@
 import type { FastifyInstance } from "fastify";
 import { requireAuth } from "../middleware/auth.middleware";
 import { userService } from "../services/user.service";
-import { CreateUserSchema, UpdateUserSchema } from "@xtanbot/zod-schemas";
+import {
+  RegisterUserSchema,
+  LoginUserSchema,
+  UpdateUserSchema,
+} from "@xtanbot/zod-schemas";
 import { createLogger } from "@xtanbot/logger";
+import { hashPassword, verifyPassword } from "../utils/password.util";
+import { toPublicUser } from "../utils/user-public.util";
 
 const logger = createLogger("UsersRoute");
 
 export async function usersRoutes(app: FastifyInstance): Promise<void> {
+  // POST /users/login — sign in (public)
+  app.post("/users/login", async (request, reply) => {
+    const body = LoginUserSchema.parse(request.body);
+    const user = await userService.getByEmail(body.email);
+    if (
+      !user ||
+      !(await verifyPassword(body.password, user.passwordHash))
+    ) {
+      return reply.status(401).send({
+        statusCode: 401,
+        error: "Unauthorized",
+        message: "Invalid email or password",
+      });
+    }
+
+    const token = await reply.jwtSign({
+      userId: user.id,
+      email: user.email,
+    });
+
+    return reply.send({ user: toPublicUser(user), token });
+  });
+
   // POST /users — register user (public)
   app.post("/users", async (request, reply) => {
-    const body = CreateUserSchema.parse(request.body);
+    const body = RegisterUserSchema.parse(request.body);
     const existing = await userService.getByEmail(body.email);
 
     if (existing) {
@@ -20,15 +49,16 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const user = await userService.create(body);
+    const { password, ...profile } = body;
+    const passwordHash = await hashPassword(password);
+    const user = await userService.create({ ...profile, passwordHash });
 
-    // Issue JWT
     const token = await reply.jwtSign({
       userId: user.id,
       email: user.email,
     });
 
-    return reply.status(201).send({ user, token });
+    return reply.status(201).send({ user: toPublicUser(user), token });
   });
 
   // GET /users/me — get current user
@@ -44,7 +74,7 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    return reply.send(user);
+    return reply.send(toPublicUser(user));
   });
 
   app.patch(
@@ -71,7 +101,7 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       const user = await userService.update(userId, data);
-      return reply.send(user);
+      return reply.send(toPublicUser(user));
     },
   );
 }

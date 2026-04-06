@@ -7,42 +7,61 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
   type TextInput as TextInputType,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
+import { hrefDashboard } from "../../src/navigation/href";
 import { useRegister } from "../../src/hooks/useAuth";
+import { useAuthStore } from "../../src/stores/auth.store";
 import { parseError } from "../../src/utils/error.utils";
+import { toastError, toastSuccess } from "../../src/utils/toast";
 import Button from "../../src/components/common/Button";
 import Input from "../../src/components/common/Input";
-import ErrorMessage from "../../src/components/common/ErrorMessage";
 
 export default function RegisterScreen() {
   const router = useRouter();
   const register = useRegister();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authLoading = useAuthStore((s) => s.isLoading);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
   const emailRef = useRef<TextInputType>(null);
   const passwordRef = useRef<TextInputType>(null);
   const confirmRef = useRef<TextInputType>(null);
 
-  function handleRegister() {
-    setError(null);
+  if (!authLoading && isAuthenticated) {
+    return <Redirect href={hrefDashboard()} />;
+  }
 
+  if (authLoading) {
+    return (
+      <View style={styles.loadingFull}>
+        <ActivityIndicator color="#FBBF24" size="large" />
+      </View>
+    );
+  }
+
+  function handleRegister() {
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      toastError("Passwords do not match", "Check passwords");
       return;
     }
 
     register.mutate(
       { name: name.trim(), email: email.trim(), password },
       {
-        onSuccess: () => router.replace("/(app)/(tabs)"),
-        onError: (err) => setError(parseError(err)),
+        onSuccess: () => {
+          toastSuccess("Your account is ready.");
+          router.replace(hrefDashboard());
+        },
+        onError: (err) => {
+          toastError(parseError(err), "Sign up failed");
+        },
       },
     );
   }
@@ -57,8 +76,8 @@ export default function RegisterScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>← BACK</Text>
+        <Pressable onPress={() => router.replace("/")} style={styles.backButton}>
+          <Text style={styles.backText}>← HOME</Text>
         </Pressable>
 
         <View style={styles.header}>
@@ -110,8 +129,6 @@ export default function RegisterScreen() {
             onSubmitEditing={handleRegister}
           />
 
-          <ErrorMessage message={error} />
-
           <Button
             title="CREATE ACCOUNT"
             onPress={handleRegister}
@@ -121,7 +138,7 @@ export default function RegisterScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Already have an account?</Text>
-          <Pressable onPress={() => router.back()}>
+          <Pressable onPress={() => router.replace("/(auth)/login")}>
             <Text style={styles.footerLink}>SIGN IN →</Text>
           </Pressable>
         </View>
@@ -131,6 +148,12 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingFull: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0a0a0a",
+  },
   flex: {
     flex: 1,
     backgroundColor: "#0a0a0a",

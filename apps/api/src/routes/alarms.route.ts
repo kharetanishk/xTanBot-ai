@@ -7,7 +7,8 @@ import { createLogger } from "@xtanbot/logger";
 const logger = createLogger("AlarmsRoute");
 
 const CreateAlarmSchema = z.object({
-  scheduledAt: z.string().datetime(),
+  // Mobile sends Asia/Kolkata as +05:30; plain .datetime() only allows Zulu (Z).
+  scheduledAt: z.string().datetime({ offset: true }),
   label: z.string().optional().default("Wake up alarm"),
 });
 
@@ -23,7 +24,16 @@ export async function alarmsRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/alarms", { preHandler: requireAuth }, async (request, reply) => {
     const { userId } = request.user;
-    const body = CreateAlarmSchema.parse(request.body);
+    const parsed = CreateAlarmSchema.safeParse(request.body);
+    if (!parsed.success) {
+      const msg = parsed.error.errors.map((e) => e.message).join("; ");
+      return reply.status(400).send({
+        statusCode: 400,
+        error: "Bad Request",
+        message: msg || "Invalid alarm payload",
+      });
+    }
+    const body = parsed.data;
     const scheduledAt = new Date(body.scheduledAt);
     if (scheduledAt <= new Date()) {
       return reply.status(400).send({

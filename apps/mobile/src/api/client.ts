@@ -6,6 +6,7 @@ import {
   API_TIMEOUT_MS,
   TOKEN_STORAGE_KEY,
 } from "../constants/config";
+import { useAuthStore } from "../stores/auth.store";
 
 async function getToken(): Promise<string | null> {
   try {
@@ -15,18 +16,6 @@ async function getToken(): Promise<string | null> {
     return await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
   } catch {
     return null;
-  }
-}
-
-async function deleteToken(): Promise<void> {
-  try {
-    if (Platform.OS === "web") {
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      return;
-    }
-    await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
-  } catch {
-    // ignore
   }
 }
 
@@ -51,7 +40,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
-      await deleteToken();
+      await useAuthStore.getState().clearAuth();
     }
     return Promise.reject(error);
   },

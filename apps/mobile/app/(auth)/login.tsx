@@ -7,32 +7,52 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
   type TextInput as TextInputType,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
+import { hrefDashboard } from "../../src/navigation/href";
 import { useLogin } from "../../src/hooks/useAuth";
+import { useAuthStore } from "../../src/stores/auth.store";
 import { parseError } from "../../src/utils/error.utils";
+import { toastError, toastSuccess } from "../../src/utils/toast";
 import Button from "../../src/components/common/Button";
 import Input from "../../src/components/common/Input";
-import ErrorMessage from "../../src/components/common/ErrorMessage";
 
 export default function LoginScreen() {
   const router = useRouter();
   const login = useLogin();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authLoading = useAuthStore((s) => s.isLoading);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
   const passwordRef = useRef<TextInputType>(null);
 
+  if (!authLoading && isAuthenticated) {
+    return <Redirect href={hrefDashboard()} />;
+  }
+
+  if (authLoading) {
+    return (
+      <View style={styles.loadingFull}>
+        <ActivityIndicator color="#FBBF24" size="large" />
+      </View>
+    );
+  }
+
   function handleLogin() {
-    setError(null);
     login.mutate(
       { email: email.trim(), password },
       {
-        onSuccess: () => router.replace("/(app)/(tabs)"),
-        onError: (err) => setError(parseError(err)),
+        onSuccess: () => {
+          toastSuccess("Welcome back.");
+          router.replace(hrefDashboard());
+        },
+        onError: (err) => {
+          toastError(parseError(err), "Sign in failed");
+        },
       },
     );
   }
@@ -76,8 +96,6 @@ export default function LoginScreen() {
             onSubmitEditing={handleLogin}
           />
 
-          <ErrorMessage message={error} />
-
           <Button
             title="SIGN IN"
             onPress={handleLogin}
@@ -86,6 +104,9 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.footer}>
+          <Pressable onPress={() => router.replace("/")} style={styles.homeLink}>
+            <Text style={styles.homeLinkText}>← BACK TO HOME</Text>
+          </Pressable>
           <Text style={styles.footerText}>Don't have an account?</Text>
           <Pressable onPress={() => router.push("/(auth)/register")}>
             <Text style={styles.footerLink}>CREATE ACCOUNT →</Text>
@@ -109,6 +130,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 48,
+  },
+  loadingFull: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0a0a0a",
+  },
+  homeLink: {
+    marginBottom: 16,
+  },
+  homeLinkText: {
+    color: "#888888",
+    fontWeight: "700",
+    fontSize: 13,
   },
   header: {
     alignItems: "center",

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { StructuredPayload } from "@xtanbot/ai-core";
 import { requireAuth } from "../middleware/auth.middleware";
 import { conversationService } from "../services/conversation.service";
 import { createLogger } from "@xtanbot/logger";
@@ -48,26 +49,38 @@ export async function conversationsRoutes(app: FastifyInstance): Promise<void> {
 
       await conversationService.addUserMessage(conversationId, body.content);
 
-      let fullResponse = "";
+      let result: {
+        fullText: string;
+        toolsUsed: string[];
+        structuredPayload?: StructuredPayload;
+      };
       try {
-        await conversationService.runAgentAndStream(
+        result = await conversationService.runAgentAndStream(
           conversationId,
           userId,
           body.content,
-          (chunk) => {
-            fullResponse += chunk;
+          () => {
+            /* non-streaming: full text returned with result */
           },
         );
       } catch (err) {
         logger.error({ err, userId, conversationId }, "Agent run failed");
-        fullResponse = "I'm sorry, something went wrong. Please try again.";
+        result = {
+          fullText: "I'm sorry, something went wrong. Please try again.",
+          toolsUsed: [],
+        };
       }
 
-      await conversationService.addAssistantMessage(conversationId, fullResponse);
+      await conversationService.addAssistantMessage(
+        conversationId,
+        result.fullText,
+        result.toolsUsed,
+      );
 
       return reply.send({
         conversationId,
-        message: fullResponse,
+        message: result.fullText,
+        structuredPayload: result.structuredPayload ?? null,
       });
     },
   );

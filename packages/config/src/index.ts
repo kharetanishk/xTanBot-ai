@@ -73,6 +73,21 @@ const EnvSchema = z.object({
 
   // ─── Expo / Mobile ───────────────────────────────
   EXPO_PUBLIC_PROJECT_ID: z.string().optional(),
+
+  // ─── Web Search ──────────────────────────────────
+  SERPER_API_KEY: z.string().default(""),
+
+  // ─── WhatsApp MSG91 ──────────────────────────────
+  MSG91_AUTH_KEY: z.string().default(""),
+  MSG91_INTEGRATED_NUMBER: z.string().default("917880293523"),
+  MSG91_TEMPLATE_NAME: z.string().default("xtanbot_message"),
+
+  // ─── Location defaults ────────────────────────────
+  USER_DEFAULT_CITY: z.string().default("Durg"),
+  USER_DEFAULT_STATE: z.string().default("Chhattisgarh"),
+  USER_DEFAULT_PINCODE: z.string().default("491001"),
+  USER_DEFAULT_LAT: z.string().default("21.1904"),
+  USER_DEFAULT_LNG: z.string().default("81.2849"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

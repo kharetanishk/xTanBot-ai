@@ -10,6 +10,16 @@ export const CreateUserSchema = z.object({
   timezone: z.string().default("Asia/Kolkata"),
 });
 
+/** Sign-up body (API): profile fields + password (hashed before persistence). */
+export const RegisterUserSchema = CreateUserSchema.extend({
+  password: z.string().min(8).max(200),
+});
+
+export const LoginUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1).max(200),
+});
+
 export const UpdateUserSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   phone: z.string().optional().nullable(),
@@ -27,5 +37,7 @@ export const UserSchema = z.object({
 });
 
 export type CreateUser = z.infer<typeof CreateUserSchema>;
+export type RegisterUser = z.infer<typeof RegisterUserSchema>;
+export type LoginUser = z.infer<typeof LoginUserSchema>;
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;
 export type User = z.infer<typeof UserSchema>;
