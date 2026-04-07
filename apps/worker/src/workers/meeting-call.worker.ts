@@ -311,35 +311,48 @@ export function createMeetingCallWorker(): Worker {
           });
         }
 
-        // Post-call WhatsApp for appointment booking calls
-        try {
-          const sessionKey = `call-context:${callRecord?.callSid ?? ""}`;
-          const sessionCtxRaw = await redisConnection.get(sessionKey);
-          const sessionCtx = sessionCtxRaw
-            ? (JSON.parse(sessionCtxRaw) as Record<string, unknown>)
-            : {};
-          const purpose = (sessionCtx.purpose as string | undefined) ?? "";
-          const isAppointmentCall =
-            purpose.toLowerCase().includes("appointment") ||
-            purpose.toLowerCase().includes("booking");
+        // Post-call WhatsApp summary — sent for all call types
+        if (summary) {
+          try {
+            const sessionKey = `call-context:${callRecord?.callSid ?? ""}`;
+            const sessionCtxRaw = await redisConnection.get(sessionKey);
+            const sessionCtx = sessionCtxRaw
+              ? (JSON.parse(sessionCtxRaw) as Record<string, unknown>)
+              : {};
+            const callType = (sessionCtx.callType as string | undefined) ?? "";
+            const purpose = (sessionCtx.purpose as string | undefined) ?? "";
 
-          if (isAppointmentCall && summary) {
+            const headerByType: Record<string, string> = {
+              "story-call": "Story Call Summary",
+              "scheduled-meeting": "Meeting Call Summary",
+              "daily-briefing": "Daily Briefing Summary",
+            };
+            const isAppointment =
+              purpose.toLowerCase().includes("appointment") ||
+              purpose.toLowerCase().includes("booking");
+            const header = isAppointment
+              ? "Appointment Update"
+              : (headerByType[callType] ?? "Call Summary");
+
             const user = await prisma.user.findUnique({ where: { id: userId } });
             if (user?.phone) {
               const now = new Date().toLocaleString("en-IN", {
                 timeZone: "Asia/Kolkata",
               });
-              const msg =
-                `xTanBot Appointment Update:\n\n${summary}\n\nCall completed at ${now}`;
+              const sanitised = summary
+                .replace(/\n+/g, " ")
+                .replace(/\s{2,}/g, " ")
+                .trim();
+              const msg = `xTanBot ${header}: ${sanitised} (${now})`;
               await sendPostCallWhatsApp(user.phone, msg, config);
               log.info(
-                { userId, phone: user.phone },
-                "Post-call appointment WhatsApp sent",
+                { userId, phone: user.phone, callType, header },
+                "Post-call WhatsApp summary sent",
               );
             }
+          } catch (err) {
+            log.error({ err }, "Failed to send post-call WhatsApp summary");
           }
-        } catch (err) {
-          log.error({ err }, "Failed to send post-call appointment WhatsApp");
         }
 
         log.info({ callId }, "Post-call intelligence completed");

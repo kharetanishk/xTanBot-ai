@@ -224,22 +224,11 @@ async function processAgentJob(job: Job<AgentJob>): Promise<void> {
 
   const updatedMessages = [...session.messages, userMessage];
 
-  let voiceContext: Record<string, unknown> = {};
-  try {
-    const raw = await redisConnection.get(`session:context:${callSid}`);
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (
-        parsed &&
-        typeof parsed === "object" &&
-        !Array.isArray(parsed)
-      ) {
-        voiceContext = parsed as Record<string, unknown>;
-      }
-    }
-  } catch (err) {
-    log.warn({ err, callSid }, "Failed to load session:context from Redis");
-  }
+  // voiceContext is stored directly on the session by the voice pipeline (mergedCtx)
+  const voiceContext: Record<string, unknown> =
+    session.voiceContext && typeof session.voiceContext === "object" && !Array.isArray(session.voiceContext)
+      ? (session.voiceContext as Record<string, unknown>)
+      : {};
 
   let userProfile: { name: string; timezone: string } | undefined;
   try {

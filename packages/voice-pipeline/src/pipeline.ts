@@ -109,7 +109,9 @@ export function createPipeline(
     const SILENCE_PROMPT_MS = 8000;
     const SILENCE_DISCONNECT_MS = 10000;
     let lastTranscript = "";
-    const MIN_TRANSCRIPT_LENGTH = 2;
+    const MIN_TRANSCRIPT_LENGTH = 8;
+    const MIN_WORD_COUNT = 2;
+    let enqueueDebounceTimer: NodeJS.Timeout | null = null;
     /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
     let hasBufferedOutboundMedia = false;
     let currentVoiceSettings: VoiceSettings = getVoiceSettingsForMood("default");
@@ -171,6 +173,15 @@ export function createPipeline(
       return;
     }
 
+    const wordCount = cleaned.trim().split(/\s+/).filter(Boolean).length;
+    if (wordCount < MIN_WORD_COUNT) {
+      logger.debug(
+        { transcript, cleaned, wordCount },
+        "Transcript word count too low — skipped",
+      );
+      return;
+    }
+
     if (cleaned === lastTranscript) {
       logger.debug(
         { transcript: cleaned },
@@ -181,29 +192,41 @@ export function createPipeline(
 
     lastTranscript = cleaned;
 
+    // Debounce: if another final fires within 350 ms (user still speaking),
+    // cancel the pending enqueue and schedule with the latest transcript.
+    if (enqueueDebounceTimer) {
+      clearTimeout(enqueueDebounceTimer);
+      enqueueDebounceTimer = null;
+    }
+
+    const sessionSnapshot = currentSession;
     logger.info(
-      { transcript: cleaned, sessionId: currentSession.sessionId },
+      { transcript: cleaned, sessionId: sessionSnapshot.sessionId },
       "STT final — enqueueing agent job",
     );
 
-    try {
-      await enqueueAgentJob({
-        sessionId: currentSession.sessionId,
-        userId: currentSession.userId,
+    enqueueDebounceTimer = setTimeout(() => {
+      enqueueDebounceTimer = null;
+      enqueueAgentJob({
+        sessionId: sessionSnapshot.sessionId,
+        userId: sessionSnapshot.userId,
         transcript: cleaned,
-        callSid: currentSession.callSid,
-        conversationId: currentSession.conversationId,
-      });
-      logger.info(
-        { sessionId: currentSession.sessionId },
-        "Agent job queued successfully",
-      );
-    } catch (err) {
-      logger.error(
-        { err, sessionId: currentSession.sessionId, transcript: cleaned },
-        "Failed to enqueue agent job — no AI reply for this turn",
-      );
-    }
+        callSid: sessionSnapshot.callSid,
+        conversationId: sessionSnapshot.conversationId,
+      })
+        .then(() => {
+          logger.info(
+            { sessionId: sessionSnapshot.sessionId },
+            "Agent job queued successfully",
+          );
+        })
+        .catch((err) => {
+          logger.error(
+            { err, sessionId: sessionSnapshot.sessionId, transcript: cleaned },
+            "Failed to enqueue agent job — no AI reply for this turn",
+          );
+        });
+    }, 350);
   }
 
   async function handleTTSResponse(text: string): Promise<void> {
@@ -436,6 +459,14 @@ export function createPipeline(
           greeting =
             `${prefix}${calleeName ? `, ${calleeName}` : ""}! ` +
             `This is xTanBot calling on behalf of ${userName}. Do you have a moment?`;
+        } else if (ctxCallType === "general-call" || (ctxPurpose && !isAppointmentCall)) {
+          const calleeName = (mergedCtx as any)?.calleeName as string | undefined;
+          const un =
+            ((mergedCtx as any)?.userName as string | undefined) ?? userName;
+          // Do NOT say "how can I help" — we placed this call, state our purpose
+          greeting =
+            `Hello${calleeName ? `, ${calleeName}` : ""}! This is xTanBot calling on behalf of ${un ?? "the user"}. ` +
+            `${ctxPurpose}. Is this a good time?`;
         } else if (isAppointmentCall) {
           const calleeName = (mergedCtx as any)?.calleeName as string | undefined;
           const un =
@@ -591,6 +622,10 @@ export function createPipeline(
     if (disconnectTimer) {
       clearTimeout(disconnectTimer);
       disconnectTimer = null;
+    }
+    if (enqueueDebounceTimer) {
+      clearTimeout(enqueueDebounceTimer);
+      enqueueDebounceTimer = null;
     }
     lastTranscript = "";
 

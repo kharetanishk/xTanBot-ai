@@ -53,22 +53,34 @@ export const makeCallTool: ToolDefinition<Input, Output> = {
       const { config } = await import("@xtanbot/config");
       const streamBaseUrl = config.API_URL;
 
-      // Store call context in Redis so the voice agent can access it when the call connects
-      if (input.callContext && Object.keys(input.callContext).length > 0) {
+      // Store call context in Redis so the voice agent can access it when the call connects.
+      // Always write a context entry so the pipeline knows this is an AI-initiated call.
+      {
         const { redisConnection } = await import("@xtanbot/redis");
         const normalised = input.toNumber.replace(/^\+/, "");
         const contextKey = `call:context:pending:${normalised}`;
+
+        const purposeLower = (input.callContext?.purpose ?? input.reason ?? "").toLowerCase();
+        const hasAppointmentHint =
+          purposeLower.includes("appointment") ||
+          purposeLower.includes("booking") ||
+          (!!input.callContext?.appointmentDate && !!input.callContext?.appointmentTime);
+
+        const callType = hasAppointmentHint ? "appointment" : "general-call";
+
         await redisConnection.set(
           contextKey,
           JSON.stringify({
-            ...input.callContext,
+            ...(input.callContext ?? {}),
+            callType,
+            purpose: input.callContext?.purpose ?? input.reason ?? "",
             userId: input.userId,
             createdAt: new Date().toISOString(),
           }),
           "EX",
           300,
         );
-        logger.info({ contextKey }, "Call context stored in Redis");
+        logger.info({ contextKey, callType }, "Call context stored in Redis");
       }
 
       const response = await fetch(`${streamBaseUrl}/calls/internal`, {

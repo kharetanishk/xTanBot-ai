@@ -75,10 +75,10 @@ export function createDeepgramConnection(
     encoding: "mulaw",
     sample_rate: 8000,
     channels: 1,
-    endpointing: 250,
+    endpointing: 500,
     interim_results: true,
     filler_words: false,
-    utterance_end_ms: 1200,
+    utterance_end_ms: 1500,
   });
 
   connection.on("open", () => {
