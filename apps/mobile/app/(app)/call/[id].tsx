@@ -26,7 +26,10 @@ export default function CallDetailScreen() {
   if (isLoading || !call) {
     return (
       <View style={styles.screen}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable
+          onPress={() => router.canGoBack() ? router.back() : router.replace("/(app)/dashboard/calls")}
+          style={styles.backButton}
+        >
           <Text style={styles.backText}>← BACK</Text>
         </Pressable>
         <View style={styles.skeleton} />
@@ -40,7 +43,10 @@ export default function CallDetailScreen() {
       contentContainerStyle={styles.content}
       refreshControl={undefined}
     >
-      <Pressable onPress={() => router.back()} style={styles.backButton}>
+      <Pressable
+        onPress={() => router.canGoBack() ? router.back() : router.replace("/(app)/dashboard/calls")}
+        style={styles.backButton}
+      >
         <Text style={styles.backText}>← BACK</Text>
       </Pressable>
 
