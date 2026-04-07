@@ -8,7 +8,6 @@ import {
   Modal,
   ScrollView,
   TextInput,
-  Alert,
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
@@ -37,11 +36,38 @@ function pad2(n: number): string {
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
 
-function StatusBadge({ status }: { status: Alarm["status"] }) {
-  const label = status.replace(/_/g, " ").toUpperCase();
+type BadgeVariant = "default" | "past" | "active" | "cancelled" | "failed";
+
+function alarmDisplayStatus(alarm: Alarm): { label: string; variant: BadgeVariant } {
+  const now = Date.now();
+  const at = new Date(alarm.scheduledAt).getTime();
+  const isPast = at <= now;
+
+  switch (alarm.status) {
+    case "cancelled":
+      return { label: "CANCELLED", variant: "cancelled" };
+    case "acknowledged":
+      return { label: "ACKNOWLEDGED", variant: "past" };
+    case "failed":
+      return { label: "FAILED", variant: "failed" };
+    case "ringing":
+      // Still ringing right now vs already rang
+      return isPast
+        ? { label: "RANG", variant: "past" }
+        : { label: "RINGING", variant: "active" };
+    case "scheduled":
+    default:
+      return isPast
+        ? { label: "MISSED", variant: "failed" }
+        : { label: "SCHEDULED", variant: "default" };
+  }
+}
+
+function StatusBadge({ alarm }: { alarm: Alarm }) {
+  const { label, variant } = alarmDisplayStatus(alarm);
   return (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>{label}</Text>
+    <View style={[styles.badge, styles[`badge_${variant}`]]}>
+      <Text style={[styles.badgeText, styles[`badgeText_${variant}`]]}>{label}</Text>
     </View>
   );
 }
@@ -133,20 +159,6 @@ export default function AlarmsScreen() {
     );
   }, [ymd, hour, minute, label, alarmTimeZone, createAlarm]);
 
-  const onDelete = useCallback(
-    (id: string) => {
-      Alert.alert("Cancel alarm", "Remove this alarm?", [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: () => deleteAlarm.mutate(id),
-        },
-      ]);
-    },
-    [deleteAlarm],
-  );
-
   const renderItem = useCallback(
     ({ item }: { item: Alarm }) => (
       <View style={styles.card}>
@@ -156,17 +168,17 @@ export default function AlarmsScreen() {
           <Text style={styles.cardTime}>
             {formatDateTimeInTimeZone(item.scheduledAt, alarmTimeZone)}
           </Text>
-          <StatusBadge status={item.status} />
+          <StatusBadge alarm={item} />
         </View>
         <Pressable
-          onPress={() => onDelete(item.id)}
+          onPress={() => deleteAlarm.mutate(item.id)}
           style={({ pressed }) => [styles.deleteBtn, pressed && styles.deletePressed]}
         >
           <Text style={styles.deleteX}>✕</Text>
         </Pressable>
       </View>
     ),
-    [onDelete, alarmTimeZone],
+    [deleteAlarm, alarmTimeZone],
   );
 
   const listEmpty = useMemo(() => {
@@ -533,12 +545,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  badge_default: { backgroundColor: "#f3f4f6", borderColor: "#000" },
+  badge_past: { backgroundColor: "#e5e7eb", borderColor: "#9ca3af" },
+  badge_active: { backgroundColor: "#FBBF24", borderColor: "#000" },
+  badge_cancelled: { backgroundColor: "#e5e7eb", borderColor: "#9ca3af" },
+  badge_failed: { backgroundColor: "#fee2e2", borderColor: "#ef4444" },
   badgeText: {
     fontSize: 10,
     fontWeight: "900",
     color: "#000",
     letterSpacing: 0.5,
   },
+  badgeText_default: { color: "#000" },
+  badgeText_past: { color: "#6b7280" },
+  badgeText_active: { color: "#000" },
+  badgeText_cancelled: { color: "#9ca3af" },
+  badgeText_failed: { color: "#ef4444" },
   deleteBtn: {
     width: 40,
     height: 40,

@@ -35,8 +35,23 @@ export function useDeleteAlarm() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: alarmsApi.cancel,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.alarms.all });
+    // Remove immediately from the list before the server responds
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.alarms.all });
+      const prev = queryClient.getQueryData<Alarm[]>(queryKeys.alarms.all);
+      queryClient.setQueryData<Alarm[]>(
+        queryKeys.alarms.all,
+        (old) => (old ?? []).filter((a) => a.id !== id),
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) {
+        queryClient.setQueryData(queryKeys.alarms.all, ctx.prev);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alarms.all });
     },
   });
 }

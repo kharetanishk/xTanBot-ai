@@ -5,9 +5,8 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
-  Alert,
+  Modal,
   ActivityIndicator,
-  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -39,6 +38,7 @@ export default function SettingsScreen() {
   const user = freshUser ?? storeUser;
 
   const [editing, setEditing] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editTimezone, setEditTimezone] = useState("Asia/Kolkata");
@@ -94,31 +94,12 @@ export default function SettingsScreen() {
     updateMutation.mutate(payload);
   };
 
-  const handleSignOut = () => {
-    const finish = async () => {
-      await clearAuth();
-      queryClient.clear();
-      toastSuccess("You are signed out.", "Signed out");
-      router.replace("/");
-    };
-
-    if (Platform.OS === "web") {
-      if (typeof window !== "undefined" && window.confirm("Sign out from xTanBot?")) {
-        void finish();
-      }
-      return;
-    }
-
-    Alert.alert("Sign out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: () => {
-          void finish();
-        },
-      },
-    ]);
+  const confirmSignOut = async () => {
+    setShowSignOutModal(false);
+    await clearAuth();
+    queryClient.clear();
+    toastSuccess("You are signed out.", "Signed out");
+    router.replace("/");
   };
 
   return (
@@ -253,13 +234,65 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>DANGER ZONE</Text>
         <View style={styles.dangerCard}>
           <Pressable
-            onPress={handleSignOut}
+            onPress={() => setShowSignOutModal(true)}
             style={({ pressed }) => [styles.signOutButton, pressed && styles.signOutPressed]}
           >
             <Text style={styles.signOutText}>SIGN OUT</Text>
           </Pressable>
         </View>
       </View>
+
+      {/* ── Sign-out confirmation modal ── */}
+      <Modal
+        visible={showSignOutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSignOutModal(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setShowSignOutModal(false)}
+        >
+          <Pressable style={styles.modalCard} onPress={() => undefined}>
+            {/* Red accent bar */}
+            <View style={styles.modalAccentBar} />
+
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalBrand}>xTanBot</Text>
+              <Text style={styles.modalTitle}>SIGN OUT</Text>
+            </View>
+
+            {/* Body */}
+            <Text style={styles.modalBody}>
+              Are you sure you want to sign out? You'll need to log back in to access your account.
+            </Text>
+
+            {/* Actions */}
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setShowSignOutModal(false)}
+                style={({ pressed }) => [
+                  styles.modalCancelBtn,
+                  pressed && styles.modalBtnPressed,
+                ]}
+              >
+                <Text style={styles.modalCancelText}>CANCEL</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => void confirmSignOut()}
+                style={({ pressed }) => [
+                  styles.modalSignOutBtn,
+                  pressed && styles.modalBtnPressed,
+                ]}
+              >
+                <Text style={styles.modalSignOutText}>SIGN OUT</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -510,5 +543,93 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     marginRight: 6,
+  },
+
+  // ── Sign-out modal ──────────────────────────────────────
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#ffffff",
+    borderWidth: 3,
+    borderColor: "#000000",
+    shadowColor: "#000",
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 12,
+    overflow: "hidden",
+  },
+  modalAccentBar: {
+    height: 6,
+    backgroundColor: "#ef4444",
+  },
+  modalHeader: {
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 6,
+  },
+  modalBrand: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#ef4444",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#000000",
+    letterSpacing: 1,
+  },
+  modalBody: {
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  modalActions: {
+    flexDirection: "row",
+    borderTopWidth: 3,
+    borderTopColor: "#000000",
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+    borderRightWidth: 1.5,
+    borderRightColor: "#000000",
+  },
+  modalSignOutBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: "center",
+    backgroundColor: "#ef4444",
+    borderLeftWidth: 1.5,
+    borderLeftColor: "#000000",
+  },
+  modalBtnPressed: {
+    opacity: 0.8,
+  },
+  modalCancelText: {
+    fontWeight: "900",
+    fontSize: 13,
+    color: "#000000",
+    letterSpacing: 1,
+  },
+  modalSignOutText: {
+    fontWeight: "900",
+    fontSize: 13,
+    color: "#ffffff",
+    letterSpacing: 1,
   },
 });
