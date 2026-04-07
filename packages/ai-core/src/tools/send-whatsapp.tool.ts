@@ -135,7 +135,10 @@ export const sendWhatsappTool: ToolDefinition<Input, Output> = {
                 components: {
                   body_1: {
                     type: "text",
-                    value: input.message,
+                    value: input.message
+                      .replace(/\n+/g, " ")
+                      .replace(/\s{2,}/g, " ")
+                      .trim(),
                   },
                 },
               },
@@ -203,7 +206,9 @@ export const sendWhatsappTool: ToolDefinition<Input, Output> = {
           },
           message: {
             type: "string",
-            description: "Full message content to send. Generate the complete message text.",
+            description:
+              "Full message content to send. MUST be a single paragraph with no line breaks (\\n). " +
+              "Do not use \\n anywhere in the message — write everything as one continuous sentence or paragraph.",
           },
           confirmed: {
             type: "boolean",

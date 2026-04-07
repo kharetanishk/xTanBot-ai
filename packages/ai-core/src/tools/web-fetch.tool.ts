@@ -58,10 +58,31 @@ export const webFetchTool: ToolDefinition<Input, Output> = {
       if (input.selector) {
         text = $(input.selector).text();
       } else {
-        text = $("main, article, .content, body").first().text();
+        // Try content-dense selectors before falling back to full body
+        const contentSelectors = [
+          "main",
+          "article",
+          ".content",
+          ".doctor-info",
+          ".profile",
+          "[class*='doctor']",
+          "[class*='profile']",
+          "[class*='listing']",
+          "section",
+        ];
+
+        let found = "";
+        for (const sel of contentSelectors) {
+          const el = $(sel).first().text().trim();
+          if (el.length > 200) {
+            found = el;
+            break;
+          }
+        }
+        text = found || $("body").text();
       }
 
-      text = text.replace(/\s+/g, " ").trim().slice(0, 3000);
+      text = text.replace(/\s+/g, " ").trim().slice(0, 1500);
 
       return {
         success: true,

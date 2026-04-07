@@ -8,7 +8,7 @@ const logger = createLogger("WebSearchTool");
 const inputSchema = z.object({
   query: z.string().min(1).max(500),
   location: z.string().optional(),
-  numResults: z.number().optional().default(5),
+  numResults: z.number().optional().default(3),
 });
 
 type Input = z.infer<typeof inputSchema>;
@@ -72,7 +72,7 @@ export const webSearchTool: ToolDefinition<Input, Output> = {
     try {
       const body: Record<string, unknown> = {
         q: input.query,
-        num: Math.min(10, Math.max(1, input.numResults)),
+        num: Math.min(5, Math.max(1, input.numResults)),
         hl: "en",
         gl: "in",
       };
@@ -116,7 +116,7 @@ export const webSearchTool: ToolDefinition<Input, Output> = {
         }>;
       };
 
-      const cap = Math.min(10, Math.max(1, input.numResults));
+      const cap = Math.min(5, Math.max(1, input.numResults));
       const results: SearchResult[] = [];
 
       if (data.localResults?.length) {
@@ -190,7 +190,7 @@ export const webSearchTool: ToolDefinition<Input, Output> = {
           },
           numResults: {
             type: "number",
-            description: "Number of results (default 5, max 10)",
+            description: "Number of results (default 3, max 5)",
           },
         },
         required: ["query"],

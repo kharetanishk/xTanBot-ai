@@ -4,6 +4,7 @@ import { callService } from "../services/call.service";
 import { CreateCallSchema } from "@xtanbot/zod-schemas";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
+import { prisma } from "@xtanbot/db";
 
 const logger = createLogger("CallsRoute");
 
@@ -83,5 +84,84 @@ export async function callsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return reply.send(call);
+  });
+
+  // POST /calls/story — initiate a story call directly from mobile
+  app.post("/calls/story", { preHandler: requireAuth }, async (request, reply) => {
+    const body = request.body as {
+      toNumber?: string;
+      contactName?: string;
+      story: string;
+      mood?: string;
+      customMoodDescription?: string;
+      objective?: string;
+    };
+
+    const { userId } = request.user;
+
+    if (!body.story || body.story.trim().length < 10) {
+      return reply.status(400).send({ error: "story must be at least 10 characters" });
+    }
+
+    let resolvedPhone = body.toNumber?.trim() ?? "";
+    let resolvedName = body.contactName?.trim() ?? "Contact";
+
+    if (!resolvedPhone && body.contactName) {
+      const contact = await prisma.contact.findFirst({
+        where: {
+          userId,
+          name: { contains: body.contactName.trim(), mode: "insensitive" },
+          deletedAt: null,
+        },
+      });
+      if (!contact?.phone) {
+        return reply.status(404).send({ error: `No phone number found for "${body.contactName}"` });
+      }
+      resolvedPhone = contact.phone;
+      resolvedName = contact.name;
+    }
+
+    if (!resolvedPhone) {
+      return reply.status(400).send({ error: "toNumber or contactName is required" });
+    }
+
+    const { redisConnection } = await import("@xtanbot/redis");
+    const normalised = resolvedPhone.replace(/^\+/, "");
+    const contextKey = `call:context:pending:${normalised}`;
+
+    await redisConnection.set(
+      contextKey,
+      JSON.stringify({
+        userId,
+        callType: "story-call",
+        calleeName: resolvedName,
+        story: body.story.trim(),
+        mood: body.mood ?? "friendly",
+        customMoodDescription: body.customMoodDescription ?? null,
+        objective: body.objective?.trim() ?? "Complete the story objective",
+        createdAt: new Date().toISOString(),
+      }),
+      "EX",
+      300,
+    );
+
+    logger.info({ contextKey, mood: body.mood, resolvedPhone }, "Story call context stored in Redis");
+
+    try {
+      const call = await callService.initiateCall({
+        toNumber: resolvedPhone,
+        userId,
+        streamBaseUrl: config.API_URL,
+      });
+
+      logger.info({ callId: call.id, toNumber: resolvedPhone }, "Story call initiated from mobile");
+      return reply.status(201).send(call);
+    } catch (err) {
+      logger.error({ err }, "Story call initiation failed");
+      return reply.status(500).send({
+        error: "Failed to initiate story call",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
   });
 }

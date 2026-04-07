@@ -25,6 +25,7 @@ const toolCallsTotal = counter(
 );
 
 const MAX_TOOL_ITERATIONS = 10;
+const MAX_TOOL_RESULT_CHARS = 800;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -38,11 +39,89 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 3,
+  label = "API call",
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const msg = err instanceof Error ? err.message.toLowerCase() : "";
+      const status = (err as { status?: number })?.status;
+      const is529 = msg.includes("529") || msg.includes("overloaded") || status === 529;
+      if (is529 && attempt < maxAttempts) {
+        const delay = attempt * 2000;
+        logger.warn({ attempt, delay, label }, "API overloaded (529), retrying...");
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+function compressToolResult(toolName: string, resultJson: string): string {
+  try {
+    const result = JSON.parse(resultJson) as Record<string, unknown>;
+
+    if (toolName === "web_fetch") {
+      return JSON.stringify({
+        success: result.success,
+        title: result.title,
+        text:
+          typeof result.text === "string"
+            ? result.text.slice(0, 500) + (result.text.length > 500 ? "...[truncated]" : "")
+            : "",
+      });
+    }
+
+    if (toolName === "web_search") {
+      const results = result.results as Array<Record<string, unknown>> | undefined;
+      return JSON.stringify({
+        success: result.success,
+        query: result.query,
+        results: results?.map((r) => ({
+          title: r.title,
+          phone: r.phone,
+          address: r.address,
+          rating: r.rating,
+          snippet: typeof r.snippet === "string" ? r.snippet.slice(0, 100) : "",
+        })) ?? [],
+      });
+    }
+
+    // For all other tools, truncate any long string values but keep JSON valid
+    if (resultJson.length > MAX_TOOL_RESULT_CHARS) {
+      const compressed = Object.fromEntries(
+        Object.entries(result).map(([k, v]) => [
+          k,
+          typeof v === "string" && v.length > 200 ? v.slice(0, 200) + "...[truncated]" : v,
+        ]),
+      );
+      return JSON.stringify(compressed);
+    }
+
+    return resultJson;
+  } catch {
+    return resultJson.slice(0, MAX_TOOL_RESULT_CHARS);
+  }
+}
+
 function categoriseApiError(err: unknown): AgentErrorCategory {
   if (!(err instanceof Error)) return "unknown";
   const msg = err.message.toLowerCase();
   if (msg.includes("timeout") || msg.includes("timed out")) return "timeout";
-  if (msg.includes("rate limit") || msg.includes("429")) return "rate_limit";
+  if (
+    msg.includes("rate limit") ||
+    msg.includes("429") ||
+    msg.includes("529") ||
+    msg.includes("overloaded")
+  ) return "rate_limit";
   if (msg.includes("content") && msg.includes("policy")) return "content_policy";
   if (
     msg.includes("network") ||
@@ -362,19 +441,24 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
     let response: Anthropic.Message;
     try {
       response = (await withTimeout(
-        anthropicClient.messages.create({
-          model: selectedModel,
-          system: buildSystemPromptForAgent(ctx),
-          ...(isVoice
-            ? {}
-            : {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                tools: toolRouter.getDefinitions() as any,
-                tool_choice: { type: "auto" as const },
-              }),
-          messages,
-          max_tokens: maxTokens,
-        }),
+        withRetry(
+          () =>
+            anthropicClient.messages.create({
+              model: selectedModel,
+              system: buildSystemPromptForAgent(ctx),
+              ...(isVoice
+                ? {}
+                : {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    tools: toolRouter.getDefinitions() as any,
+                    tool_choice: { type: "auto" as const },
+                  }),
+              messages,
+              max_tokens: maxTokens,
+            }),
+          3,
+          "LLM call",
+        ),
         config.ANTHROPIC_TIMEOUT_MS,
         "LLM call",
       )) as Anthropic.Message;
@@ -395,9 +479,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
         response.content as Array<{ type: string; text?: string }>,
       );
 
-      const truncatedText = isVoice
-        ? truncateForVoice(text)
-        : truncateToSentences(text, 3);
+      const truncatedText = isVoice ? truncateForVoice(text) : text;
 
       if (truncatedText !== text) {
         logger.info(
@@ -616,7 +698,7 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
             return {
               type: "tool_result" as const,
               tool_use_id: block.id,
-              content: JSON.stringify(result),
+              content: compressToolResult(block.name, JSON.stringify(result)),
             };
           } catch (err) {
             logger.error(

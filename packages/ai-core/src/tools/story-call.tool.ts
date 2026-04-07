@@ -39,7 +39,7 @@ export const storyCallTool: ToolDefinition<Input, Output> = {
   name: "story_call",
   description:
     "Make a phone call with a specific story context and mood/tone. Use when the user wants to call someone for sales, persuasion, pitching, or any scripted conversation. The AI will conduct the entire call following the story and speaking in the specified mood.",
-  requiresConfirmation: true,
+  requiresConfirmation: false,
 
   inputSchema,
 

@@ -5,11 +5,36 @@ import { createLogger } from "@xtanbot/logger";
 
 const logger = createLogger("ConversationService");
 
-const AGENT_HISTORY_WINDOW = 10;
+const AGENT_HISTORY_WINDOW = 6;
 
 function trimHistory<T>(arr: T[], window: number): T[] {
   if (arr.length <= window * 2) return arr;
   return arr.slice(arr.length - window * 2);
+}
+
+function compressMessageForHistory(msg: {
+  role: string;
+  content: string;
+}): { role: "user" | "assistant"; content: string } {
+  const role = msg.role as "user" | "assistant";
+  // Compress long JSON-looking content (e.g. tool results stored as text)
+  if (msg.role === "user" && msg.content.startsWith("{") && msg.content.length > 500) {
+    try {
+      const parsed = JSON.parse(msg.content) as Record<string, unknown>;
+      if (typeof parsed.text === "string" && parsed.text.length > 300) {
+        return {
+          role,
+          content: JSON.stringify({
+            ...parsed,
+            text: parsed.text.slice(0, 300) + "...[compressed]",
+          }),
+        };
+      }
+    } catch {
+      return { role, content: msg.content.slice(0, 500) };
+    }
+  }
+  return { role, content: msg.content };
 }
 
 export const conversationService = {
@@ -79,15 +104,12 @@ export const conversationService = {
       throw new Error("Conversation not found");
     }
 
-    const history = trimHistory(
-      conv.messages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+    const messages = trimHistory(
+      conv.messages.map((m) =>
+        compressMessageForHistory({ role: m.role, content: m.content }),
+      ),
       AGENT_HISTORY_WINDOW,
     );
-
-    const messages = history;
 
     logger.info(
       { userId, conversationId, messageCount: messages.length },
