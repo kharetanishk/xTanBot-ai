@@ -125,13 +125,19 @@ export async function callsRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "toNumber or contactName is required" });
     }
 
-    const { redisConnection } = await import("@xtanbot/redis");
-    const normalised = resolvedPhone.replace(/^\+/, "");
-    const contextKey = `call:context:pending:${normalised}`;
+    try {
+      // 1. Create the Twilio call first so we have the real callSid.
+      const call = await callService.initiateCall({
+        toNumber: resolvedPhone,
+        userId,
+        streamBaseUrl: config.API_URL,
+      });
 
-    await redisConnection.set(
-      contextKey,
-      JSON.stringify({
+      // 2. Store story context keyed by callSid — this is what the pipeline reads on
+      //    onStart via `call-context:{callSid}`.  The twilio/voice route preserves this
+      //    key and will NOT overwrite it with the generic { callType:"inbound" } default.
+      const { redisConnection } = await import("@xtanbot/redis");
+      const storyContext = JSON.stringify({
         userId,
         callType: "story-call",
         calleeName: resolvedName,
@@ -140,21 +146,14 @@ export async function callsRoutes(app: FastifyInstance): Promise<void> {
         customMoodDescription: body.customMoodDescription ?? null,
         objective: body.objective?.trim() ?? "Complete the story objective",
         createdAt: new Date().toISOString(),
-      }),
-      "EX",
-      300,
-    );
-
-    logger.info({ contextKey, mood: body.mood, resolvedPhone }, "Story call context stored in Redis");
-
-    try {
-      const call = await callService.initiateCall({
-        toNumber: resolvedPhone,
-        userId,
-        streamBaseUrl: config.API_URL,
       });
+      await redisConnection.set(`call-context:${call.callSid}`, storyContext, "EX", 3600);
+      await redisConnection.set(`session:context:${call.callSid}`, storyContext, "EX", 3600);
 
-      logger.info({ callId: call.id, toNumber: resolvedPhone }, "Story call initiated from mobile");
+      logger.info(
+        { callId: call.id, callSid: call.callSid, toNumber: resolvedPhone, mood: body.mood },
+        "Story call initiated — context stored at callSid key",
+      );
       return reply.status(201).send(call);
     } catch (err) {
       logger.error({ err }, "Story call initiation failed");

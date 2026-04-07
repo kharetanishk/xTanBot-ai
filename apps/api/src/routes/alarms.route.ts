@@ -1,8 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "@xtanbot/db";
+import { redisConnection } from "@xtanbot/redis";
 import { requireAuth } from "../middleware/auth.middleware";
 import { createLogger } from "@xtanbot/logger";
+
+const ALARM_CREATED_CHANNEL = "alarm:created";
 
 const logger = createLogger("AlarmsRoute");
 
@@ -50,6 +53,12 @@ export async function alarmsRoutes(app: FastifyInstance): Promise<void> {
         status: "scheduled",
       },
     });
+
+    // Notify the worker to re-arm its precision timer for this new alarm.
+    void redisConnection
+      .publish(ALARM_CREATED_CHANNEL, alarm.id)
+      .catch((err) => logger.warn({ err }, "Could not publish alarm:created"));
+
     return reply.status(201).send(alarm);
   });
 

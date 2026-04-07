@@ -53,36 +53,7 @@ export const makeCallTool: ToolDefinition<Input, Output> = {
       const { config } = await import("@xtanbot/config");
       const streamBaseUrl = config.API_URL;
 
-      // Store call context in Redis so the voice agent can access it when the call connects.
-      // Always write a context entry so the pipeline knows this is an AI-initiated call.
-      {
-        const { redisConnection } = await import("@xtanbot/redis");
-        const normalised = input.toNumber.replace(/^\+/, "");
-        const contextKey = `call:context:pending:${normalised}`;
-
-        const purposeLower = (input.callContext?.purpose ?? input.reason ?? "").toLowerCase();
-        const hasAppointmentHint =
-          purposeLower.includes("appointment") ||
-          purposeLower.includes("booking") ||
-          (!!input.callContext?.appointmentDate && !!input.callContext?.appointmentTime);
-
-        const callType = hasAppointmentHint ? "appointment" : "general-call";
-
-        await redisConnection.set(
-          contextKey,
-          JSON.stringify({
-            ...(input.callContext ?? {}),
-            callType,
-            purpose: input.callContext?.purpose ?? input.reason ?? "",
-            userId: input.userId,
-            createdAt: new Date().toISOString(),
-          }),
-          "EX",
-          300,
-        );
-        logger.info({ contextKey, callType }, "Call context stored in Redis");
-      }
-
+      // 1. Create the call first so we get the real Twilio callSid.
       const response = await fetch(`${streamBaseUrl}/calls/internal`, {
         method: "POST",
         headers: {
@@ -106,6 +77,31 @@ export const makeCallTool: ToolDefinition<Input, Output> = {
       }
 
       const call = (await response.json()) as { id: string; callSid: string };
+
+      // 2. Store call context keyed by callSid so the pipeline reads it on onStart.
+      //    Done AFTER the call exists so twilio/voice route preserves it (not overwrites).
+      if (call.callSid) {
+        const { redisConnection } = await import("@xtanbot/redis");
+
+        const purposeLower = (input.callContext?.purpose ?? input.reason ?? "").toLowerCase();
+        const hasAppointmentHint =
+          purposeLower.includes("appointment") ||
+          purposeLower.includes("booking") ||
+          (!!input.callContext?.appointmentDate && !!input.callContext?.appointmentTime);
+        const callType = hasAppointmentHint ? "appointment" : "general-call";
+
+        const ctx = JSON.stringify({
+          ...(input.callContext ?? {}),
+          callType,
+          purpose: input.callContext?.purpose ?? input.reason ?? "",
+          userId: input.userId,
+          createdAt: new Date().toISOString(),
+        });
+
+        await redisConnection.set(`call-context:${call.callSid}`, ctx, "EX", 3600);
+        await redisConnection.set(`session:context:${call.callSid}`, ctx, "EX", 3600);
+        logger.info({ callSid: call.callSid, callType }, "Call context stored at callSid key");
+      }
 
       return {
         success: true,

@@ -103,19 +103,33 @@ export const twilioRoutes = fp(async function twilioRoutes(
           "twilio/voice hit",
         );
         if (callSid) {
-          const json = JSON.stringify(enriched);
-          await redisConnection.set(
-            `call-context:${callSid}`,
-            json,
-            "EX",
-            3600,
-          );
-          await redisConnection.set(
-            `session:context:${callSid}`,
-            json,
-            "EX",
-            3600,
-          );
+          // If no URL context was provided (not a scheduled meeting/briefing call),
+          // check whether context was pre-stored by the story-call or make_call path.
+          // If so, preserve it — just merge answeredBy — instead of overwriting with
+          // the generic { callType: "inbound" } default.
+          const existingJson =
+            !contextRaw
+              ? await redisConnection.get(`call-context:${callSid}`)
+              : null;
+
+          if (existingJson) {
+            // Pre-stored context found — keep it, only add answeredBy if AMD fired.
+            if (answeredBy && String(answeredBy).trim() !== "") {
+              const existing = JSON.parse(existingJson) as Record<string, unknown>;
+              const updated = JSON.stringify({
+                ...existing,
+                answeredBy: String(answeredBy),
+              });
+              await redisConnection.set(`call-context:${callSid}`, updated, "EX", 3600);
+              await redisConnection.set(`session:context:${callSid}`, updated, "EX", 3600);
+            }
+            // else: leave existing context completely intact.
+          } else {
+            // No pre-stored context — write the enriched/default context as usual.
+            const json = JSON.stringify(enriched);
+            await redisConnection.set(`call-context:${callSid}`, json, "EX", 3600);
+            await redisConnection.set(`session:context:${callSid}`, json, "EX", 3600);
+          }
         }
 
         const twiml = buildInboundCallTwiML(streamUrl, enriched);

@@ -345,28 +345,10 @@ export function createPipeline(
           userId = callSid;
         }
 
-        // Load any pending call context stored by make_call tool (appointment booking, etc.)
-        let pendingCallContext: Record<string, unknown> = {};
-        try {
-          const normalised = (to ?? "").replace(/^\+/, "");
-          if (normalised) {
-            const contextKey = `call:context:pending:${normalised}`;
-            const storedCtx = await redisConnection.get(contextKey);
-            if (storedCtx) {
-              pendingCallContext = JSON.parse(storedCtx) as Record<string, unknown>;
-              await redisConnection.del(contextKey);
-              logger.info(
-                { contextKey, pendingCallContext },
-                "Loaded and consumed pending call context from Redis",
-              );
-            }
-          }
-        } catch (err) {
-          logger.warn({ err }, "Failed to load pending call context from Redis");
-        }
-
-        // Merge pending context into the existing voice context (from call-context:callSid)
-        const mergedCtx = { ...(ctx as Record<string, unknown>), ...pendingCallContext };
+        // ctx is already the full call context (story/appointment/general/inbound),
+        // written to call-context:{callSid} by the story-call/make_call path before
+        // the twilio/voice webhook fires, and preserved by that webhook.
+        const mergedCtx = ctx as Record<string, unknown>;
 
         // Set voice settings based on mood in call context (for story calls)
         const ctxMood = (mergedCtx.mood as string | undefined) ?? "default";
@@ -399,20 +381,7 @@ export function createPipeline(
           status: "active",
         });
 
-        // Write merged context back to callSid key so post-call-intelligence worker can read it
-        if (Object.keys(pendingCallContext).length > 0 && callSid) {
-          try {
-            await redisConnection.set(
-              `call-context:${callSid}`,
-              JSON.stringify(mergedCtx),
-              "EX",
-              3600,
-            );
-            logger.info({ callSid }, "Call context stored at callSid key");
-          } catch (err) {
-            logger.warn({ err }, "Failed to store callContext at callSid");
-          }
-        }
+        // mergedCtx is already at call-context:{callSid}; nothing extra to write back.
 
         registerVoiceTtsHandler(sessionId, handleTTSResponse);
 
