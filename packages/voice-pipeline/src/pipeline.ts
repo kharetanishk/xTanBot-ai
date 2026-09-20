@@ -560,6 +560,18 @@ export function createPipeline(
             } catch (err) {
               logger.error({ err }, "STT fallback TTS failed");
             }
+            // Closing the socket ourselves means Twilio never sends `stop`,
+            // so run the same teardown that the stop event would have.
+            if (currentSession) {
+              try {
+                await handleStop(
+                  currentSession.callSid,
+                  currentSession.streamSid,
+                );
+              } catch (err) {
+                logger.error({ err }, "handleStop failed on STT unrecoverable path");
+              }
+            }
             wsClose?.(1011, "stt_unrecoverable");
           },
         );
