@@ -44,7 +44,7 @@ const bargeInTotal = counter(
 const FILLER_WORDS = [
   "um", "uh", "hmm", "mhm", "mm",
   "like", "you know", "i mean",
-  "so", "well", "right",
+  "so", "well",
 ] as const;
 
 function stripFillerWords(transcript: string): string {
@@ -109,14 +109,19 @@ export function createPipeline(
     const SILENCE_PROMPT_MS = 8000;
     const SILENCE_DISCONNECT_MS = 10000;
     let lastTranscript = "";
-    const MIN_TRANSCRIPT_LENGTH = 8;
-    const MIN_WORD_COUNT = 2;
+    const MIN_TRANSCRIPT_LENGTH = 1;
+    const MIN_WORD_COUNT = 1;
     let enqueueDebounceTimer: NodeJS.Timeout | null = null;
+    /** Finals arriving inside the debounce window are appended, not replaced. */
+    let pendingTranscript: string | null = null;
     /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
     let hasBufferedOutboundMedia = false;
     let currentVoiceSettings: VoiceSettings = getVoiceSettingsForMood("default");
     /** Ignore barge-in right after TTS starts (echo / line noise clears the whole reply). */
     let bargeInGraceUntil = 0;
+    /** Bumped per TTS utterance; a stale stream's chunks are dropped on mismatch. */
+    let ttsGeneration = 0;
+    let currentTTSAbort: AbortController | null = null;
     let consecutiveLoudInboundChunks = 0;
     const BARGE_IN_GRACE_MS = 750;
     const BARGE_IN_LOUD_CHUNKS_REQUIRED = 4;
@@ -182,18 +187,12 @@ export function createPipeline(
       return;
     }
 
-    if (cleaned === lastTranscript) {
-      logger.debug(
-        { transcript: cleaned },
-        "Duplicate transcript — skipped",
-      );
-      return;
-    }
-
-    lastTranscript = cleaned;
+    pendingTranscript = pendingTranscript
+      ? `${pendingTranscript} ${cleaned}`
+      : cleaned;
 
     // Debounce: if another final fires within 350 ms (user still speaking),
-    // cancel the pending enqueue and schedule with the latest transcript.
+    // append it and restart the timer so no segment is lost.
     if (enqueueDebounceTimer) {
       clearTimeout(enqueueDebounceTimer);
       enqueueDebounceTimer = null;
@@ -202,15 +201,28 @@ export function createPipeline(
     const sessionSnapshot = currentSession;
     logger.info(
       { transcript: cleaned, sessionId: sessionSnapshot.sessionId },
-      "STT final — enqueueing agent job",
+      "STT final — buffering for enqueue",
     );
 
     enqueueDebounceTimer = setTimeout(() => {
       enqueueDebounceTimer = null;
+      const finalTranscript = pendingTranscript;
+      pendingTranscript = null;
+      if (!finalTranscript) return;
+
+      if (finalTranscript === lastTranscript) {
+        logger.debug(
+          { transcript: finalTranscript },
+          "Duplicate transcript — skipped",
+        );
+        return;
+      }
+      lastTranscript = finalTranscript;
+
       enqueueAgentJob({
         sessionId: sessionSnapshot.sessionId,
         userId: sessionSnapshot.userId,
-        transcript: cleaned,
+        transcript: finalTranscript,
         callSid: sessionSnapshot.callSid,
         conversationId: sessionSnapshot.conversationId,
       })
@@ -222,7 +234,11 @@ export function createPipeline(
         })
         .catch((err) => {
           logger.error(
-            { err, sessionId: sessionSnapshot.sessionId, transcript: cleaned },
+            {
+              err,
+              sessionId: sessionSnapshot.sessionId,
+              transcript: finalTranscript,
+            },
             "Failed to enqueue agent job — no AI reply for this turn",
           );
         });
@@ -230,6 +246,7 @@ export function createPipeline(
   }
 
   async function handleTTSResponse(text: string): Promise<void> {
+    const gen = ++ttsGeneration;
     isSpeaking = true;
     consecutiveLoudInboundChunks = 0;
 
@@ -246,19 +263,29 @@ export function createPipeline(
       wsSend(buildTwilioClearMessage(currentStreamSid));
     }
 
-    await streamTextToSpeech(
-      text,
-      async (audioBase64) => {
-        if (!isSpeaking || !currentStreamSid) return;
-        if (!audioBase64?.length) return;
-        wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
-        hasBufferedOutboundMedia = true;
-      },
-      undefined,
-      currentVoiceSettings,
-    );
+    const abortController = new AbortController();
+    currentTTSAbort = abortController;
 
-    isSpeaking = false;
+    try {
+      await streamTextToSpeech(
+        text,
+        async (audioBase64) => {
+          if (gen !== ttsGeneration || !currentStreamSid) return;
+          if (!audioBase64?.length) return;
+          wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
+          hasBufferedOutboundMedia = true;
+        },
+        abortController.signal,
+        currentVoiceSettings,
+      );
+    } finally {
+      // Only the newest utterance owns these — a superseded stream must not
+      // clear isSpeaking for the reply that replaced it.
+      if (gen === ttsGeneration) {
+        isSpeaking = false;
+        currentTTSAbort = null;
+      }
+    }
   }
 
   const streamHandler = createStreamHandler({
@@ -500,7 +527,12 @@ export function createPipeline(
           greeting = `Hello ${userName}! I'm xTanBot, your AI assistant. How can I help you today?`;
         }
 
-        await handleTTSResponse(greeting);
+        try {
+          await handleTTSResponse(greeting);
+        } catch (err) {
+          // isSpeaking is already reset by the finally in handleTTSResponse.
+          logger.error({ err, callSid }, "Greeting TTS failed — call stays open");
+        }
 
         // Open STT only after the greeting so Deepgram is not idle with no audio (drops the socket).
         resetSttLifecycleForCall(sttLifecycle);
@@ -515,6 +547,20 @@ export function createPipeline(
               { sessionId: currentSession?.sessionId },
               "Deepgram connection reference updated after reconnect",
             );
+          },
+          async () => {
+            logger.error(
+              { sessionId: currentSession?.sessionId },
+              "STT unrecoverable — speaking fallback and closing call",
+            );
+            try {
+              await handleTTSResponse(
+                "I'm having trouble hearing you right now — let me have someone call you back.",
+              );
+            } catch (err) {
+              logger.error({ err }, "STT fallback TTS failed");
+            }
+            wsClose?.(1011, "stt_unrecoverable");
           },
         );
 
@@ -544,6 +590,9 @@ export function createPipeline(
           if (consecutiveLoudInboundChunks >= BARGE_IN_LOUD_CHUNKS_REQUIRED) {
             consecutiveLoudInboundChunks = 0;
             isSpeaking = false;
+            currentTTSAbort?.abort();
+            currentTTSAbort = null;
+            ttsGeneration++;
             wsSend(buildTwilioClearMessage(currentStreamSid));
             logger.info(
               { sessionId: currentSession?.sessionId },
@@ -575,7 +624,11 @@ export function createPipeline(
       }
 
       sendAudioToDeepgram(deepgramConnection, chunk.payload);
-      resetSilenceTimer();
+      // Twilio streams comfort-noise frames continuously; resetting on every
+      // frame meant the silence watchdog could never elapse.
+      if (mulawPayloadLooksLikeSpeech(chunk.payload)) {
+        resetSilenceTimer();
+      }
     },
 
     async onStop(callSid, streamSid) {
@@ -596,6 +649,7 @@ export function createPipeline(
       clearTimeout(enqueueDebounceTimer);
       enqueueDebounceTimer = null;
     }
+    pendingTranscript = null;
     lastTranscript = "";
 
     logger.info({ callSid, streamSid }, "Pipeline session ending");

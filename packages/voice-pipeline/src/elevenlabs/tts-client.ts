@@ -38,10 +38,10 @@ export type AudioChunkCallback = (audioBase64: string) => Promise<void>;
 export async function streamTextToSpeech(
   text: string,
   onAudioChunk: AudioChunkCallback,
-  voiceId?: string,
+  signal?: AbortSignal,
   voiceSettings?: VoiceSettings,
 ): Promise<void> {
-  const targetVoiceId = voiceId ?? config.ELEVENLABS_VOICE_ID;
+  const targetVoiceId = config.ELEVENLABS_VOICE_ID;
   const settings = voiceSettings ?? MOOD_VOICE_SETTINGS.default;
 
   logger.debug(
@@ -50,18 +50,27 @@ export async function streamTextToSpeech(
   );
 
   try {
-    const audioStream = await elevenLabsClient.generate({
-      voice: targetVoiceId,
-      model_id: config.ELEVENLABS_MODEL_ID,
-      text,
-      stream: true,
-      // Twilio Media Streams expect 8kHz μ-law (PCMU); default MP3/PCM breaks playback / may reset the WS.
-      output_format: "ulaw_8000",
-      voice_settings: settings,
-    });
+    const audioStream = await elevenLabsClient.generate(
+      {
+        voice: targetVoiceId,
+        model_id: config.ELEVENLABS_MODEL_ID,
+        text,
+        stream: true,
+        // Twilio Media Streams expect 8kHz μ-law (PCMU); default MP3/PCM breaks playback / may reset the WS.
+        output_format: "ulaw_8000",
+        voice_settings: settings,
+      },
+      { abortSignal: signal },
+    );
 
     // Fetch/Web Streams yield Uint8Array; `Uint8Array#toString("base64")` does NOT base64-encode (Twilio 31951).
     for await (const chunk of audioStream as AsyncIterable<Buffer | Uint8Array>) {
+      // Breaking the for-await calls return() on the iterator, which cancels
+      // the upstream body even if the SDK ignored abortSignal.
+      if (signal?.aborted) {
+        logger.debug("TTS stream aborted — stopped consuming");
+        return;
+      }
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       if (buf.length === 0) continue;
       await onAudioChunk(buf.toString("base64"));
@@ -69,6 +78,11 @@ export async function streamTextToSpeech(
 
     logger.debug("TTS stream completed");
   } catch (err) {
+    // A barge-in abort is expected, not a failure — never surface it to callers.
+    if (signal?.aborted) {
+      logger.debug("TTS stream aborted (barge-in)");
+      return;
+    }
     logger.error({ err }, "TTS stream failed");
     throw err;
   }

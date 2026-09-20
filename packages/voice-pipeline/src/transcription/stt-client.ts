@@ -56,6 +56,7 @@ export function createDeepgramConnection(
   lifecycle: SttLifecycle,
   onTranscript: TranscriptCallback,
   onReconnect?: (conn: ReturnType<typeof createDeepgramConnection>) => void,
+  onUnrecoverable?: () => void | Promise<void>,
 ) {
   if (!config.DEEPGRAM_API_KEY) {
     logger.warn("DEEPGRAM_API_KEY not set — STT disabled");
@@ -78,7 +79,6 @@ export function createDeepgramConnection(
     endpointing: 500,
     interim_results: true,
     filler_words: false,
-    utterance_end_ms: 1500,
   });
 
   connection.on("open", () => {
@@ -157,6 +157,11 @@ export function createDeepgramConnection(
         { attempts: lifecycle.reconnectAttempts },
         "Deepgram max reconnect attempts exceeded for this call",
       );
+      // Don't leave the caller on a live line we can no longer hear.
+      markSttDisposed(lifecycle);
+      void Promise.resolve(onUnrecoverable?.()).catch((err) =>
+        logger.error({ err }, "Deepgram unrecoverable handler failed"),
+      );
       return;
     }
 
@@ -177,6 +182,7 @@ export function createDeepgramConnection(
         lifecycle,
         onTranscript,
         onReconnect,
+        onUnrecoverable,
       );
       if (newConn) {
         onReconnect?.(newConn);
