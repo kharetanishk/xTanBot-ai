@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createLogger } from "@xtanbot/logger";
 import * as cheerio from "cheerio";
-import type { ToolDefinition, ClaudeToolDef } from "../types";
+import type { ToolDefinition, ToolSchema } from "../types";
 
 const logger = createLogger("WebFetchTool");
 
@@ -101,11 +101,11 @@ export const webFetchTool: ToolDefinition<Input, Output> = {
     }
   },
 
-  toClaudeToolDefinition(): ClaudeToolDef {
+  toToolSchema(): ToolSchema {
     return {
       name: this.name,
       description: this.description,
-      input_schema: {
+      parameters: {
         type: "object",
         properties: {
           url: {

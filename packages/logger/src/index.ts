@@ -23,7 +23,7 @@ const baseLogger = pino({
       "*.token",
       "*.apiKey",
       "*.authorization",
-      "*.ANTHROPIC_API_KEY",
+      "*.OPENROUTER_API_KEY",
       "*.ELEVENLABS_API_KEY",
       "*.TWILIO_AUTH_TOKEN",
       "*.DEEPGRAM_API_KEY",

@@ -2,14 +2,13 @@
   "extends": "@xtanbot/tsconfig/node.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
-    "paths": {
-      "@xtanbot/config": ["../config/dist/index.d.ts"],
-      "@xtanbot/logger": ["../logger/dist/index.d.ts"],
-      "@xtanbot/zod-schemas": ["../zod-schemas/dist/index.d.ts"],
-      "@xtanbot/observability": ["../observability/dist/index.d.ts"]
-    }
+    "rootDir": "src"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

@@ -1,14 +1,15 @@
-import { anthropicClient } from "./client";
+import { llmClient } from "./client";
 import { toolRouter } from "./tool-router";
 import { buildChatSystemPrompt } from "./prompt-builder";
 import { AgentError, type AgentErrorCategory } from "./errors";
 import { createLogger } from "@xtanbot/logger";
 import { config } from "@xtanbot/config";
 import { counter } from "@xtanbot/observability";
-import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 import type {
   AgentContext,
   AgentResponse,
+  AgentStreamHandlers,
   AgentMessage,
   StructuredPayload,
   ActionButton,
@@ -20,7 +21,7 @@ const logger = createLogger("AgentKernel");
 
 const toolCallsTotal = counter(
   "xtanbot_tool_calls_total",
-  "Total number of tool invocations by Claude",
+  "Total number of tool invocations by the LLM",
   ["tool_name"],
 );
 
@@ -52,10 +53,12 @@ async function withRetry<T>(
       lastError = err;
       const msg = err instanceof Error ? err.message.toLowerCase() : "";
       const status = (err as { status?: number })?.status;
-      const is529 = msg.includes("529") || msg.includes("overloaded") || status === 529;
-      if (is529 && attempt < maxAttempts) {
+      // 429 rate limit, 502/503 upstream provider hiccup (OpenRouter), 529 overloaded.
+      const isRetryable =
+        msg.includes("overloaded") || [429, 502, 503, 529].includes(status ?? 0);
+      if (isRetryable && attempt < maxAttempts) {
         const delay = attempt * 2000;
-        logger.warn({ attempt, delay, label }, "API overloaded (529), retrying...");
+        logger.warn({ attempt, delay, label }, "LLM provider busy, retrying...");
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
@@ -142,25 +145,17 @@ const SIMPLE_PATTERNS: RegExp[] = [
   /^(thank\s*you|thanks|cheers|great|perfect|awesome)\.?$/i,
 ];
 
-function selectModel(messages: Anthropic.MessageParam[]): string {
+function selectModel(messages: AgentMessage[]): string {
   const lastUserMessage = [...messages]
     .reverse()
     .find((m) => m.role === "user");
 
-  if (!lastUserMessage) return config.ANTHROPIC_MODEL;
+  if (!lastUserMessage) return config.OPENROUTER_MODEL;
 
-  const content =
-    typeof lastUserMessage.content === "string"
-      ? lastUserMessage.content
-      : "";
-
-  const isSimple = SIMPLE_PATTERNS.some((p) => p.test(content.trim()));
-  return isSimple
-    ? config.ANTHROPIC_HAIKU_MODEL
-    : config.ANTHROPIC_MODEL;
+  const isSimple = SIMPLE_PATTERNS.some((p) => p.test(lastUserMessage.content.trim()));
+  return isSimple ? config.OPENROUTER_FAST_MODEL : config.OPENROUTER_MODEL;
 }
 
-const VOICE_MODEL = "claude-haiku-4-5-20251001" as const;
 const VOICE_MAX_TOKENS = 150;
 
 function truncateToSentences(text: string, maxSentences: number): string {
@@ -328,7 +323,7 @@ Rules:
 
 function buildSystemPromptForAgent(ctx: AgentContext): string {
   if (ctx.callSid) {
-    return buildVoiceSystemPrompt(ctx);
+    return `${buildVoiceSystemPrompt(ctx)}\n\nOpen every reply with a very short first sentence (e.g. "Sure, let me check.") and then give the details.`;
   }
   return buildChatSystemPrompt(ctx);
 }
@@ -337,14 +332,33 @@ function truncateForVoice(text: string): string {
   return truncateToSentences(text, 2);
 }
 
-function extractTextFromResponse(
-  content: Array<{ type: string; text?: string }>,
-): string {
-  return content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join(" ")
-    .trim();
+type CompletionParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+
+/**
+ * One LLM call. With onText it streams tokens as they arrive; the SDK's stream helper
+ * reassembles the same final ChatCompletion (incl. tool_calls), so the loop is identical.
+ */
+async function complete(
+  params: CompletionParams,
+  onText?: (delta: string) => void,
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  if (!onText) return llmClient.chat.completions.create(params);
+  const stream = llmClient.chat.completions.stream({
+    ...params,
+    stream: true,
+    stream_options: { include_usage: true },
+  });
+  stream.on("content.delta", ({ delta }) => delta && onText(delta));
+  return stream.finalChatCompletion();
+}
+
+/** Models occasionally emit malformed tool-call JSON; {} lets zod report what's missing. */
+function parseToolArgs(raw: string): unknown {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
 }
 
 /** Confirmation intent patterns (covers English and common Hindi shorthand). */
@@ -368,7 +382,7 @@ const CONFIRM_PATTERNS = [
 function lastUserText(ctx: AgentContext): string {
   const lastUser = [...ctx.messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return "";
-  return typeof lastUser.content === "string" ? lastUser.content.toLowerCase() : "";
+  return lastUser.content.toLowerCase();
 }
 
 function userConfirmed(ctx: AgentContext): boolean {
@@ -376,8 +390,8 @@ function userConfirmed(ctx: AgentContext): boolean {
   return CONFIRM_PATTERNS.some((p) => p.test(text));
 }
 
-/** Merge authenticated context into tool args so Claude never has to guess userId. */
-function enrichToolInput(
+/** Merge authenticated context into tool args so the model never has to guess userId. */
+export function enrichToolInput(
   ctx: AgentContext,
   toolName: string,
   rawInput: unknown,
@@ -420,13 +434,19 @@ function enrichToolInput(
   return enriched;
 }
 
-export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
+export async function runAgent(
+  ctx: AgentContext,
+  stream?: AgentStreamHandlers,
+): Promise<AgentResponse> {
   logger.info(
     { sessionId: ctx.sessionId, userId: ctx.userId },
     "Agent loop started",
   );
 
-  const messages: AgentMessage[] = [...ctx.messages];
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: buildSystemPromptForAgent(ctx) },
+    ...ctx.messages,
+  ];
   const toolsUsed: string[] = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -434,8 +454,18 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
   let structuredPayload: StructuredPayload = { type: "none" };
 
   const isVoice = Boolean(ctx.callSid);
-  const selectedModel = isVoice ? VOICE_MODEL : selectModel(ctx.messages);
-  const maxTokens = isVoice ? VOICE_MAX_TOKENS : config.ANTHROPIC_MAX_TOKENS;
+  const selectedModel = isVoice ? config.OPENROUTER_FAST_MODEL : selectModel(ctx.messages);
+  const maxTokens = isVoice ? VOICE_MAX_TOKENS : config.LLM_MAX_TOKENS;
+
+  // Everything streamed to the client, across tool iterations. When streaming, this is the
+  // reply we return, so the saved message matches exactly what the user watched appear.
+  let streamedText = "";
+  const onText = stream?.onText
+    ? (delta: string) => {
+        streamedText += delta;
+        stream.onText!(delta);
+      }
+    : undefined;
 
   logger.debug(
     {
@@ -455,30 +485,28 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       );
     }
     iterations++;
-    let response: Anthropic.Message;
+    let response: OpenAI.Chat.Completions.ChatCompletion;
     try {
-      response = (await withTimeout(
+      response = await withTimeout(
         withRetry(
           () =>
-            anthropicClient.messages.create({
-              model: selectedModel,
-              system: buildSystemPromptForAgent(ctx),
-              ...(isVoice
-                ? {}
-                : {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    tools: toolRouter.getDefinitions() as any,
-                    tool_choice: { type: "auto" as const },
-                  }),
-              messages,
-              max_tokens: maxTokens,
-            }),
+            complete(
+              {
+                model: selectedModel,
+                messages,
+                ...(isVoice
+                  ? {}
+                  : { tools: toolRouter.getDefinitions(), tool_choice: "auto" as const }),
+                max_tokens: maxTokens,
+              },
+              onText,
+            ),
           3,
           "LLM call",
         ),
-        config.ANTHROPIC_TIMEOUT_MS,
+        config.LLM_TIMEOUT_MS,
         "LLM call",
-      )) as Anthropic.Message;
+      );
     } catch (err) {
       if (err instanceof AgentError) throw err;
       throw new AgentError(
@@ -488,15 +516,21 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       );
     }
 
-    totalInputTokens += response.usage.input_tokens;
-    totalOutputTokens += response.usage.output_tokens;
+    totalInputTokens += response.usage?.prompt_tokens ?? 0;
+    totalOutputTokens += response.usage?.completion_tokens ?? 0;
 
-    if (response.stop_reason === "end_turn") {
-      const text = extractTextFromResponse(
-        response.content as Array<{ type: string; text?: string }>,
-      );
+    const choice = response.choices[0];
+    if (!choice) throw new AgentError("LLM returned no choices", "unknown");
+    const toolCalls = (choice.message.tool_calls ?? []).filter(
+      (c): c is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall =>
+        c.type === "function",
+    );
 
-      const truncatedText = isVoice ? truncateForVoice(text) : text;
+    if (toolCalls.length === 0 && choice.finish_reason !== "length") {
+      const text = (onText ? streamedText : (choice.message.content ?? "")).trim();
+
+      // A streamed voice reply was already spoken in full; keep history equal to what was heard.
+      const truncatedText = isVoice && !onText ? truncateForVoice(text) : text;
 
       if (truncatedText !== text) {
         logger.info(
@@ -534,17 +568,18 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
       };
     }
 
-    if (response.stop_reason === "tool_use") {
-      const toolUseBlocks = response.content.filter(
-        (b) => b.type === "tool_use",
-      );
-
+    if (toolCalls.length > 0) {
       const toolResults = await Promise.all(
-        toolUseBlocks.map(async (block) => {
-          if (block.type !== "tool_use") return null;
+        toolCalls.map(async (call) => {
+          const block = {
+            id: call.id,
+            name: call.function.name,
+            input: parseToolArgs(call.function.arguments),
+          };
 
           toolsUsed.push(block.name);
           logger.info({ toolName: block.name }, "Executing tool");
+          stream?.onTool?.(block.name);
 
           try {
             const enrichedInput = enrichToolInput(ctx, block.name, block.input);
@@ -713,8 +748,8 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
             }
 
             return {
-              type: "tool_result" as const,
-              tool_use_id: block.id,
+              role: "tool" as const,
+              tool_call_id: block.id,
               content: compressToolResult(block.name, JSON.stringify(result)),
             };
           } catch (err) {
@@ -723,46 +758,37 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
               "Tool execution failed",
             );
             return {
-              type: "tool_result" as const,
-              tool_use_id: block.id,
+              role: "tool" as const,
+              tool_call_id: block.id,
               content: JSON.stringify({
                 error: err instanceof Error ? err.message : "Tool failed",
               }),
-              is_error: true,
             };
           }
         }),
       );
 
-      const validResults = toolResults.filter(Boolean);
-
       try {
-        for (const block of toolUseBlocks) {
-          if (block.type === "tool_use") {
-            toolCallsTotal.inc({ tool_name: block.name });
-          }
+        for (const call of toolCalls) {
+          toolCallsTotal.inc({ tool_name: call.function.name });
         }
       } catch (err) {
         logger.error({ err }, "Failed to record tool_calls_total metric");
       }
 
-      messages.push({
-        role: "assistant",
-        content: response.content,
-      });
-
-      messages.push({
-        role: "user",
-        content: validResults as AgentMessage["content"],
-      });
+      messages.push(
+        { role: "assistant", content: choice.message.content, tool_calls: toolCalls },
+        ...toolResults,
+      );
+      // Separate any pre-tool remark ("Let me check…") from the answer that follows.
+      if (onText && choice.message.content?.trim()) onText("\n\n");
 
       continue;
     }
 
-    if (response.stop_reason === "max_tokens") {
-      const text = extractTextFromResponse(
-        response.content as Array<{ type: string; text?: string }>,
-      );
+    // finish_reason === "length": out of tokens mid-reply — return what we have.
+    {
+      const text = (onText ? streamedText : (choice.message.content ?? "")).trim();
       return {
         text,
         toolsUsed,
@@ -774,7 +800,5 @@ export async function runAgent(ctx: AgentContext): Promise<AgentResponse> {
         structuredPayload,
       };
     }
-
-    throw new AgentError(`Unexpected stop_reason: ${response.stop_reason}`);
   }
 }

@@ -26,12 +26,16 @@ const EnvSchema = z.object({
     .url("API_URL must be a valid URL")
     .default("http://localhost:3000"),
 
-  // ─── Anthropic ────────────────────────────────────
-  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
-  ANTHROPIC_MODEL: z.string().default("claude-opus-4-5"),
-  ANTHROPIC_TIMEOUT_MS: z.coerce.number().default(15000),
-  ANTHROPIC_MAX_TOKENS: z.coerce.number().default(512),
-  ANTHROPIC_HAIKU_MODEL: z.string().default("claude-haiku-4-5-20251001"),
+  // ─── LLM (OpenRouter — any model: anthropic/*, openai/*, google/* …) ───
+  OPENROUTER_API_KEY: z.string().min(1, "OPENROUTER_API_KEY is required"),
+  /** Text chat (complex turns). */
+  OPENROUTER_MODEL: z.string().default("anthropic/claude-sonnet-5.5"),
+  /** Simple chat turns, phone calls, in-app voice, post-call analysis — latency matters. */
+  OPENROUTER_FAST_MODEL: z.string().default("anthropic/claude-haiku-4.5"),
+  /** In-app voice agent — lowest time-to-first-token wins (it sets how fast she answers). */
+  OPENROUTER_VOICE_MODEL: z.string().default("openai/gpt-4o-mini"),
+  LLM_TIMEOUT_MS: z.coerce.number().default(15000),
+  LLM_MAX_TOKENS: z.coerce.number().default(512),
 
   // ─── ElevenLabs ───────────────────────────────────
   ELEVENLABS_API_KEY: z.string().min(1, "ELEVENLABS_API_KEY is required"),
@@ -73,6 +77,11 @@ const EnvSchema = z.object({
 
   // ─── Expo / Mobile ───────────────────────────────
   EXPO_PUBLIC_PROJECT_ID: z.string().optional(),
+
+  // ─── In-app voice agent (LiveKit) ───
+  LIVEKIT_URL: z.string().default(""),
+  LIVEKIT_API_KEY: z.string().default(""),
+  LIVEKIT_API_SECRET: z.string().default(""),
 
   // ─── Web Search ──────────────────────────────────
   SERPER_API_KEY: z.string().default(""),

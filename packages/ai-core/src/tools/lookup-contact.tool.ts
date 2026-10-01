@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createLogger } from "@xtanbot/logger";
 import { prisma } from "@xtanbot/db";
-import type { ToolDefinition, ClaudeToolDef } from "../types";
+import type { ToolDefinition, ToolSchema } from "../types";
 
 const logger = createLogger("LookupContactTool");
 
@@ -109,11 +109,11 @@ export const lookupContactTool: ToolDefinition<Input, Output> = {
     };
   },
 
-  toClaudeToolDefinition(): ClaudeToolDef {
+  toToolSchema(): ToolSchema {
     return {
       name: this.name,
       description: this.description,
-      input_schema: {
+      parameters: {
         type: "object",
         properties: {
           query: {

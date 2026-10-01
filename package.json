@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --concurrency=20",
     "mobile": "expo start apps/mobile",
     "mobile:web": "expo start apps/mobile --web",
     "mobile:android": "expo start apps/mobile --android",

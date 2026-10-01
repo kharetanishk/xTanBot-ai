@@ -1,8 +1,9 @@
 import { ZodError } from "zod";
+import type OpenAI from "openai";
 import { createLogger } from "@xtanbot/logger";
 import { ToolError } from "./errors";
 import { allTools } from "./tools";
-import type { ToolDefinition, ClaudeToolDef, ConfirmationRequired } from "./types";
+import type { ToolDefinition, ConfirmationRequired } from "./types";
 
 const logger = createLogger("ToolRouter");
 
@@ -59,8 +60,11 @@ class ToolRouter {
     return result;
   }
 
-  getDefinitions(): ClaudeToolDef[] {
-    return [...this.registry.values()].map((t) => t.toClaudeToolDefinition());
+  getDefinitions(): OpenAI.Chat.Completions.ChatCompletionFunctionTool[] {
+    return [...this.registry.values()].map((t) => ({
+      type: "function",
+      function: t.toToolSchema(),
+    }));
   }
 
   hasTools(): boolean {

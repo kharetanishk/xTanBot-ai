@@ -12,16 +12,18 @@
     "dev": "tsc --watch --project tsconfig.json",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "tsx --test src/tools/__tests__/*.test.ts"
+    "test": "tsx --test src/__tests__/*.test.ts src/tools/__tests__/*.test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.27.0",
     "@xtanbot/config": "workspace:*",
     "@xtanbot/db": "workspace:*",
+    "@xtanbot/events": "workspace:*",
     "@xtanbot/logger": "workspace:*",
     "@xtanbot/observability": "workspace:*",
+    "@xtanbot/redis": "workspace:*",
     "@xtanbot/zod-schemas": "workspace:*",
     "cheerio": "^1.2.0",
+    "openai": "^6.49.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

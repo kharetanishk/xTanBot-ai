@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-export type AgentMessage = Anthropic.MessageParam;
+/** Plain chat history turn; the agent loop converts to the provider wire format. */
+export type AgentMessage = { role: "user" | "assistant"; content: string };
 
 export type AgentContext = {
   readonly sessionId: string;
@@ -58,6 +58,14 @@ export type StructuredPayload = {
   };
 };
 
+/** Optional live callbacks for streaming UIs (text chat over SSE). */
+export type AgentStreamHandlers = {
+  /** Each text token as the model generates it. */
+  onText?: (delta: string) => void;
+  /** A tool is about to run (e.g. show "Searching the web…"). */
+  onTool?: (name: string) => void;
+};
+
 export type AgentResponse = {
   readonly text: string;
   readonly toolsUsed: string[];
@@ -82,13 +90,13 @@ export interface ToolDefinition<TInput = any, TOutput = any> {
   requiresConfirmation: boolean;
   inputSchema: z.ZodTypeAny;
   execute: (input: TInput) => Promise<TOutput>;
-  toClaudeToolDefinition(): ClaudeToolDef;
+  toToolSchema(): ToolSchema;
 }
 
-export type ClaudeToolDef = {
+export type ToolSchema = {
   name: string;
   description: string;
-  input_schema: {
+  parameters: {
     type: "object";
     properties: Record<string, unknown>;
     required: string[];
