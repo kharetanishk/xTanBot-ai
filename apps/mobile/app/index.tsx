@@ -1,508 +1,370 @@
-import { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  Image,
+  ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
-  ActivityIndicator,
+  Text,
+  View,
   useWindowDimensions,
-  Platform,
-  Animated,
-  Easing,
-  type LayoutChangeEvent,
 } from "react-native";
 import { Redirect, useRouter } from "expo-router";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
+import { useFonts } from "expo-font";
+import {
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_700Bold,
+  BricolageGrotesque_800ExtraBold,
+} from "@expo-google-fonts/bricolage-grotesque";
+import { Caveat_700Bold } from "@expo-google-fonts/caveat";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  interpolateColor,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useAuthStore } from "../src/stores/auth.store";
 import { hrefAbout, hrefDashboard } from "../src/navigation/href";
+import XtanCharacter from "../src/components/character/XtanCharacter";
+import { narrator, useNarrator } from "../src/components/character/narrator";
+import { ScrollProvider, useScroll } from "../src/components/landing/scroll";
+import {
+  CallAnyone,
+  Faq,
+  FinalCta,
+  FONT,
+  Hero,
+  HowItWorks,
+  Marquee,
+  NarratorDock,
+  NAV_H,
+  Stats,
+  StoryChapters,
+} from "../src/components/landing/sections";
+import { colors, radius } from "../src/theme";
 
 const GITHUB_URL = "https://github.com/kharetanishk/xTanBot-ai";
 
-const LANDING_BOUNCE_SCALE = 1.05;
-
 export default function Index() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
-  const isCompact = width < 380;
-  const bounce = useRef(new Animated.Value(1)).current;
-
-  const estHeader = 56 + insets.top;
-  const estFooter = 108 + insets.bottom;
-  const [heroSlot, setHeroSlot] = useState({
-    w: width,
-    h: Math.max(160, height - estHeader - estFooter),
+  const [fontsLoaded] = useFonts({
+    BricolageGrotesque_600SemiBold,
+    BricolageGrotesque_700Bold,
+    BricolageGrotesque_800ExtraBold,
+    Caveat_700Bold,
   });
-  const onHeroSlotLayout = (e: LayoutChangeEvent) => {
-    const { width: w, height: h } = e.nativeEvent.layout;
-    setHeroSlot({ w, h: Math.max(h, 1) });
-  };
 
-  /** Horizontal inset from hero slot (use slot width so it matches layout, not window) */
-  const padX = Math.max(14, Math.min(22, heroSlot.w * 0.055));
-  const availW = Math.max(heroSlot.w - padX * 1, 1);
-  const availH = Math.max(heroSlot.h - 16, 1);
-
-  /** Fixed reservation for title + CTA so they never overlap the image (mobile-first) */
-  const bottomBlockMin = isCompact ? 128 : 138;
-  const imageRegionH = Math.max(110, availH - bottomBlockMin);
-
-  /** Extra cell so scale transform does not paint over title or get clipped */
-  const bouncePad = 1.12;
-
-  const heroImageSize = Math.max(
-    96,
-    Math.min(
-      availW * 0.9,
-      imageRegionH / bouncePad,
-      width < 400 ? 300 : 340,
-    ),
-  );
-  const bounceCell = heroImageSize * bouncePad;
-
-  const titleSize = Math.min(40, Math.max(20, availW * 0.085));
-  const googleBtnMaxW = Math.min(340, availW);
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(bounce, {
-          toValue: LANDING_BOUNCE_SCALE,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(bounce, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => {
-      loop.stop();
-    };
-  }, [bounce]);
-
-  if (isLoading) {
+  if (isLoading || !fontsLoaded) {
     return (
-      <View style={styles.loadingRoot}>
-        <ActivityIndicator color="#FBBF24" size="large" />
+      <View style={s.loading}>
+        <ActivityIndicator color={colors.accent} size="large" />
       </View>
     );
   }
-
-  if (isAuthenticated) {
-    return <Redirect href={hrefDashboard()} />;
-  }
+  if (isAuthenticated) return <Redirect href={hrefDashboard()} />;
 
   return (
-    <View style={styles.root} accessibilityLabel="xTanBot landing">
-      <SafeAreaView style={styles.navSafe} edges={["top"]}>
-        <View style={[styles.navBar, isCompact && styles.navBarCompact]}>
-          <View style={[styles.navLeft, isCompact && styles.navLeftCompact]}>
-            <Pressable
-              onPress={() => router.push("/(auth)/login")}
-              style={({ pressed }) => [
-                styles.navBtnGhost,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Log in"
-            >
-              <Text style={styles.navBtnGhostText}>Login</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => router.push("/(auth)/register")}
-              style={({ pressed }) => [
-                styles.navBtnSolid,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Register"
-            >
-              <Text style={styles.navBtnSolidText}>Register</Text>
-            </Pressable>
-          </View>
-          <View style={styles.navBrandCol}>
-            <Text style={[styles.brand, isCompact && styles.brandCompact]}>
-              xtanbot.ai
-            </Text>
-            <Pressable
-              onPress={() => router.push(hrefAbout())}
-              style={({ pressed }) => [
-                styles.navAboutHit,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="About"
-            >
-              <Text style={styles.navAbout}>About</Text>
-            </Pressable>
-          </View>
-        </View>
-      </SafeAreaView>
+    <Landing
+      onStart={() => router.push("/(auth)/register")}
+      onLogin={() => router.push("/(auth)/login")}
+      onAbout={() => router.push(hrefAbout())}
+    />
+  );
+}
 
-      {/* Image (flex) + copy/CTA (fixed stack) — no vertical overlap */}
-      <View style={styles.heroSlot} onLayout={onHeroSlotLayout}>
-        <View style={[styles.heroColumn, { paddingHorizontal: padX }]}>
-          <View style={styles.heroImageRegion}>
-            <View
-              style={[
-                styles.bounceCell,
-                { width: bounceCell, height: bounceCell },
-              ]}
-            >
-              <Animated.View
-                style={[
-                  styles.heroImageFrame,
-                  {
-                    width: heroImageSize,
-                    height: heroImageSize,
-                    transform: [{ scale: bounce }],
-                  },
-                ]}
-              >
-                <Image
-                  source={require("../assets/images/xt.png")}
-                  style={styles.heroImage}
-                  resizeMode="contain"
-                  accessibilityIgnoresInvertColors
-                />
-              </Animated.View>
-            </View>
-          </View>
+/** Tells the narrator which section is in the middle of the screen. */
+function FocusTracker() {
+  const { scrollY, vh, offsets } = useScroll();
+  useAnimatedReaction(
+    () => {
+      const center = scrollY.value + vh * 0.45;
+      const o = offsets.value;
+      let i = 0;
+      for (let k = 0; k < o.length; k++)
+        if (!Number.isNaN(o[k]!) && o[k]! <= center) i = k;
+      return i;
+    },
+    (i, prev) => {
+      if (i !== prev) runOnJS(narrator.setSection)(i);
+    },
+    [vh],
+  );
+  return null;
+}
 
-          <View style={styles.heroCopyBlock}>
-            <Text
-              style={[
-                styles.heroTitle,
-                { fontSize: titleSize, lineHeight: titleSize * 1.2 },
-              ]}
-              accessibilityRole="header"
-            >
-              xTanBot-ai
-            </Text>
+function Landing({
+  onStart,
+  onLogin,
+  onAbout,
+}: {
+  onStart: () => void;
+  onLogin: () => void;
+  onAbout: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const wide = width >= 900;
+  const tiny = width < 380; // 320–379px phones: tighter nav, drop the duplicate "Log in" (hero has one)
+  const soundOn = useNarrator((st) => st.soundOn);
 
-            <Pressable
-              onPress={() => router.push("/(auth)/login")}
-              style={({ pressed }) => [
-                styles.googleBtn,
-                styles.googleBtnShadow,
-                {
-                  width: googleBtnMaxW,
-                  maxWidth: "100%" as const,
-                  alignSelf: "center",
-                },
-                isCompact && styles.googleBtnCompact,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Continue with Google"
-            >
-              <Ionicons
-                name="logo-google"
-                size={isCompact ? 19 : 21}
-                color="#1f1f1f"
-              />
-              <Text
-                style={[
-                  styles.googleBtnText,
-                  isCompact && styles.googleBtnTextCompact,
-                ]}
-                numberOfLines={1}
-              >
-                Continue with Google
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const toTop = () => scrollRef.current?.scrollTo({ y: 0, animated: true });
+  const scrollY = useSharedValue(0);
+  const contentH = useSharedValue(1);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+    contentH.value = e.contentSize.height;
+  });
 
-      <SafeAreaView style={styles.footerSafe} edges={["bottom"]}>
-        <View
-          style={[
-            styles.footer,
-            { paddingBottom: Math.max(insets.bottom, 12) },
-          ]}
+  // Open and transparent at the top; once you scroll it lifts into a floating glass capsule.
+  const navBg = useAnimatedStyle(() => {
+    const t = interpolate(scrollY.value, [0, 90], [0, 1], Extrapolation.CLAMP);
+    return {
+      marginTop: t * 10,
+      marginHorizontal: t * (wide ? 24 : 10),
+      paddingHorizontal: (tiny ? 12 : 20) - t * (tiny ? 4 : 6),
+      borderRadius: t * 999,
+      backgroundColor: interpolateColor(t, [0, 1], ["rgba(12,12,16,0)", "rgba(12,12,16,0.78)"]),
+      borderColor: interpolateColor(t, [0, 1], ["rgba(255,255,255,0)", "rgba(255,255,255,0.09)"]),
+      shadowOpacity: t * 0.45,
+    };
+  });
+  const progress = useAnimatedStyle(() => ({
+    width: `${interpolate(scrollY.value, [0, Math.max(1, contentH.value - height)], [0, 100], Extrapolation.CLAMP)}%`,
+  }));
+
+  return (
+    <View style={s.root}>
+      <ScrollProvider scrollY={scrollY}>
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.footerCredit}>Developed by Tanishk Khare</Text>
+          <Hero onStart={onStart} onLogin={onLogin} />
+          <Marquee />
+          <StoryChapters />
+          <HowItWorks />
+          <CallAnyone />
+          <Stats />
+          <Faq />
+          <FinalCta onStart={onStart} onLogin={onLogin} />
+          <View style={s.footer}>
+            <Text style={s.credit}>Developed with 💛 by Tanishk Khare</Text>
+            <Pressable
+              onPress={() => void Linking.openURL(GITHUB_URL)}
+              style={s.github}
+              accessibilityRole="link"
+            >
+              <Ionicons name="logo-github" size={18} color={colors.accent} />
+              <Text style={s.githubText}>Contribute on GitHub</Text>
+            </Pressable>
+          </View>
+        </Animated.ScrollView>
+        <FocusTracker />
+      </ScrollProvider>
+
+      <NarratorDock />
+
+      {/* Fixed nav + scroll progress */}
+      <View
+        pointerEvents="box-none"
+        style={[s.nav, { paddingTop: insets.top, height: NAV_H + insets.top }]}
+      >
+        <Animated.View style={[s.navInner, navBg]}>
           <Pressable
-            onPress={() => void Linking.openURL(GITHUB_URL)}
-            style={({ pressed }) => [
-              styles.contributeRow,
-              pressed && styles.pressed,
+            onPress={toTop}
+            style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+              s.brandRow,
+              (hovered || pressed) && { opacity: 0.85 },
             ]}
             accessibilityRole="link"
-            accessibilityLabel="Contribute on GitHub"
+            accessibilityLabel="xtanbot.ai — back to top"
           >
-            <Ionicons name="logo-github" size={18} color="#FBBF24" />
-            <Text style={styles.contributeText}>Contribute on GitHub</Text>
+            <View style={s.brandFace}>
+              <XtanCharacter size={34} variant="face" still />
+            </View>
+            <Text style={[s.brand, tiny && { fontSize: 17 }]}>
+              xtanbot<Text style={s.brandDot}>.ai</Text>
+            </Text>
           </Pressable>
-        </View>
-      </SafeAreaView>
+
+          <View style={s.navRight}>
+            {wide ? (
+              <>
+                <NavLink label="About" onPress={onAbout} />
+                <NavLink label="GitHub" icon="logo-github" onPress={() => void Linking.openURL(GITHUB_URL)} />
+                <View style={s.navSep} />
+              </>
+            ) : null}
+            <Pressable
+              onPress={() => (soundOn ? narrator.disable() : void narrator.enable())}
+              style={({ hovered }: { hovered?: boolean }) => [s.soundBtn, soundOn && s.soundOn, hovered && !soundOn && s.hover]}
+              accessibilityLabel={soundOn ? "Mute xTan" : "Hear xTan speak"}
+            >
+              <Ionicons
+                name={soundOn ? "volume-high" : "volume-mute"}
+                size={16}
+                color={soundOn ? colors.accent : colors.textMuted}
+              />
+              {wide ? (
+                <Text style={[s.soundText, soundOn && { color: colors.accent }]}>
+                  {soundOn ? "Voice on" : "Hear her"}
+                </Text>
+              ) : null}
+            </Pressable>
+            {tiny ? null : <NavLink label="Log in" onPress={onLogin} />}
+            <Pressable
+              onPress={onStart}
+              style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+                s.navCta,
+                tiny && { paddingHorizontal: 12 },
+                hovered && s.navCtaHover,
+                pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+              ]}
+            >
+              <Text style={s.navCtaText}>{wide ? "Get started" : "Start"}</Text>
+              <Ionicons name="arrow-forward" size={15} color={colors.onAccent} />
+            </Pressable>
+          </View>
+
+          <Animated.View style={[s.progress, progress]} />
+        </Animated.View>
+      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
+function NavLink({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      style={({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => [
+        s.navLinkBtn,
+        (hovered || pressed) && s.hover,
+      ]}
+    >
+      {({ hovered }: { hovered?: boolean }) => (
+        <>
+          {icon ? <Ionicons name={icon} size={16} color={hovered ? colors.text : colors.textMuted} /> : null}
+          <Text style={[s.navLink, hovered && { color: colors.text }]}>{label}</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#050508" },
+  loading: {
     flex: 1,
-    backgroundColor: "#050508",
-    overflow: "visible",
-  },
-  loadingRoot: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#0a0a0a",
-  },
-  heroSlot: {
-    flex: 1,
-    minHeight: 0,
-    width: "100%",
-  },
-  heroColumn: {
-    flex: 1,
-    minHeight: 0,
-    width: "100%",
-    maxWidth: 520,
-    alignSelf: "center",
-    flexDirection: "column",
-  },
-  heroImageRegion: {
-    flex: 1,
-    minHeight: 0,
-    width: "100%",
-    alignItems: "center",
-    /** Bottom-align so the logo sits just above the title (center caused a large empty band on phones). */
-    justifyContent: "flex-end",
-    paddingBottom: 1,
-  },
-  bounceCell: {
     alignItems: "center",
     justifyContent: "center",
-    overflow: "visible",
+    backgroundColor: colors.bg,
   },
-  heroImageFrame: {
-    alignItems: "center",
-    justifyContent: "center",
+  nav: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
   },
-  heroImage: {
-    width: "100%",
-    height: "100%",
-  },
-  heroCopyBlock: {
-    width: "100%",
-    flexShrink: 0,
-    flexGrow: 0,
-    alignItems: "center",
-    paddingTop: 0,
-    paddingBottom: 40,
-    gap: 12,
-  },
-  heroTitle: {
-    color: "#fafafa",
-    fontWeight: "900",
-    color: "#FBBF24",
-    letterSpacing: 1.5,
-    textAlign: "center",
-    width: "100%",
-    paddingHorizontal: 4,
-  },
-  googleBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 13,
-    paddingHorizontal: 22,
-    borderRadius: 999,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
-    ...Platform.select({
-      web: { cursor: "pointer" as const },
-      default: {},
-    }),
-  },
-  googleBtnShadow: Platform.select({
-    ios: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.2,
-      shadowRadius: 8,
-    },
-    android: { elevation: 4 },
-    default: {},
-  }),
-  googleBtnCompact: {
-    paddingVertical: 11,
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  googleBtnText: {
-    color: "#1f1f1f",
-    fontSize: 15,
-    fontWeight: "600",
-    letterSpacing: 0.15,
-    flexShrink: 1,
-  },
-  googleBtnTextCompact: {
-    fontSize: 14,
-  },
-  navSafe: {
-    width: "100%",
-    backgroundColor: "transparent",
-    zIndex: 10,
-  },
-  navBar: {
+  navInner: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 56,
-  },
-  navBarCompact: {
-    paddingHorizontal: 12,
-  },
-  navLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  navLeftCompact: {
-    gap: 8,
-  },
-  navBtnGhost: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: "rgba(251,191,36,0.85)",
-    backgroundColor: "rgba(0,0,0,0.35)",
-    ...Platform.select({
-      web: { cursor: "pointer" as const },
-      default: {},
-    }),
-  },
-  navBtnGhostText: {
-    color: "#FBBF24",
-    fontWeight: "800",
-    fontSize: 14,
-    letterSpacing: 0.3,
-  },
-  navBtnSolid: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: "#FBBF24",
-    borderWidth: 2,
-    borderColor: "#000",
-    ...Platform.select({
-      web: { cursor: "pointer" as const },
-      default: {},
-    }),
-  },
-  navBtnSolidText: {
-    color: "#000000",
-    fontWeight: "900",
-    fontSize: 14,
-    letterSpacing: 0.3,
-  },
-  navBrandCol: {
-    alignItems: "flex-end",
-    justifyContent: "flex-start",
-    maxWidth: "46%",
-  },
-  brand: {
-    color: "#ffffff",
-    fontWeight: "900",
-    fontSize: 17,
-    letterSpacing: 0.8,
-    textAlign: "right",
-    textShadowColor: "rgba(0,0,0,0.9)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
-  },
-  brandCompact: {
-    fontSize: 15,
-  },
-  navAboutHit: {
-    marginTop: 2,
-    paddingVertical: 4,
-    paddingHorizontal: 2,
-    marginRight: -2,
-    ...Platform.select({
-      web: { cursor: "pointer" as const },
-      default: {},
-    }),
-  },
-  navAbout: {
-    color: "#FBBF24",
-    fontWeight: "700",
-    fontSize: 13,
-    letterSpacing: 0.35,
-    textAlign: "right",
-    textDecorationLine: "underline",
-    textDecorationColor: "rgba(251,191,36,0.5)",
-  },
-  footerSafe: {
+    borderWidth: 1,
+    overflow: "hidden",
     width: "100%",
-    backgroundColor: "transparent",
+    maxWidth: 1080,
+    alignSelf: "center",
+    shadowColor: "#000",
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    ...(Platform.OS === "web" ? ({ backdropFilter: "blur(14px) saturate(140%)" } as object) : {}),
   },
-  footer: {
-    flexDirection: "column",
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 10, ...(Platform.OS === "web" ? ({ cursor: "pointer" } as object) : {}) },
+  brandDot: { color: colors.text },
+  brandFace: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(251,191,36,0.25)",
   },
-  footerCredit: {
-    color: "rgba(255,255,255,0.55)",
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.4,
-    textAlign: "center",
+  brand: {
+    color: colors.accent,
+    fontSize: 20,
+    fontFamily: FONT.display,
+    letterSpacing: -0.3,
   },
-  contributeRow: {
+  navRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+  navLinkBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill },
+  navLink: { color: colors.textMuted, fontSize: 15, fontFamily: FONT.bold },
+  navSep: { width: 1, height: 18, backgroundColor: "rgba(255,255,255,0.1)", marginHorizontal: 6 },
+  hover: { backgroundColor: "rgba(255,255,255,0.06)" },
+  navCta: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingVertical: 6,
+    gap: 6,
+    marginLeft: 4,
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
     paddingHorizontal: 16,
-    borderRadius: 999,
+    paddingVertical: 9,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  navCtaHover: { shadowOpacity: 0.6, transform: [{ translateY: -1 }] },
+  navCtaText: { color: colors.onAccent, fontSize: 14, fontFamily: FONT.bold },
+  soundBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderWidth: 1,
-    borderColor: "rgba(251,191,36,0.4)",
-    backgroundColor: "rgba(251,191,36,0.08)",
-    marginBottom: 4,
-    ...Platform.select({
-      web: { cursor: "pointer" as const },
-      default: {},
-    }),
+    borderColor: colors.borderStrong,
   },
-  contributeText: {
-    color: "#FBBF24",
-    fontWeight: "700",
-    fontSize: 13,
-    letterSpacing: 0.3,
+  soundOn: {
+    borderColor: "rgba(251,191,36,0.5)",
+    backgroundColor: colors.accentSoft,
   },
-  pressed: {
-    opacity: 0.82,
+  soundText: { color: colors.textMuted, fontSize: 13, fontFamily: FONT.bold },
+  progress: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    height: 2,
+    backgroundColor: colors.accent,
   },
+
+  footer: { alignItems: "center", gap: 8, paddingVertical: 48 },
+  credit: { color: colors.textSubtle, fontSize: 14, fontFamily: FONT.semi },
+  github: { flexDirection: "row", alignItems: "center", gap: 8 },
+  githubText: { color: colors.accent, fontSize: 14, fontFamily: FONT.bold },
 });
