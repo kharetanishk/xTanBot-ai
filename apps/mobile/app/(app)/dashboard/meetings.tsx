@@ -1,113 +1,62 @@
-import { View, Text, FlatList, Pressable, StyleSheet } from "react-native";
+import { SectionList, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useMeetings, useUpcomingMeetings } from "../../../src/hooks/useMeetings";
 import MeetingCard from "../../../src/components/meetings/MeetingCard";
 import { isUpcoming } from "../../../src/utils/date.utils";
+import { Appear, EmptyState, IconButton, Screen, ScreenHeader, Skeleton } from "../../../src/components/ui";
+import { colors } from "../../../src/theme";
 
 export default function MeetingsScreen() {
   const router = useRouter();
   const { data: allMeetings, isLoading, refetch, isRefetching } = useMeetings();
   const { data: upcoming = [] } = useUpcomingMeetings();
-
   const past = (allMeetings ?? []).filter((m) => !isUpcoming(m.endTime));
+  const newMeeting = () => router.push("/(app)/meeting/new");
+
+  const sections = [
+    { title: "Upcoming", data: upcoming },
+    { title: "Past", data: past },
+  ].filter((sec) => sec.data.length > 0);
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.title}>MEETINGS</Text>
-        <Pressable
-          style={styles.addButton}
-          onPress={() => router.push("/(app)/meeting/new")}
-        >
-          <Text style={styles.addButtonText}>New Meeting</Text>
-        </Pressable>
-      </View>
-
-      <FlatList
-        ListHeaderComponent={
-          <>
-            <Text style={styles.sectionTitle}>UPCOMING</Text>
-            {upcoming.length === 0 && !isLoading && (
-              <Text style={styles.emptySection}>No upcoming meetings</Text>
-            )}
-            {upcoming.map((m) => (
-              <MeetingCard
-                key={m.id}
-                meeting={m}
-                onPress={() => router.push(`/(app)/meeting/${m.id}`)}
-              />
-            ))}
-            <Text style={[styles.sectionTitle, { marginTop: 8 }]}>PAST</Text>
-            {past.length === 0 && !isLoading && (
-              <Text style={styles.emptySection}>No past meetings</Text>
-            )}
-          </>
-        }
-        data={past}
+    <Screen>
+      <ScreenHeader
+        title="Meetings"
+        subtitle={upcoming.length ? `${upcoming.length} coming up` : "Your schedule"}
+        right={<IconButton icon="add" onPress={newMeeting} accessibilityLabel="New meeting" />}
+      />
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <MeetingCard
-            meeting={item}
-            onPress={() => router.push(`/(app)/meeting/${item.id}`)}
-          />
+        contentContainerStyle={s.list}
+        showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }) => <Text style={s.section}>{section.title}</Text>}
+        renderItem={({ item, index }) => (
+          <Appear index={index}>
+            <MeetingCard meeting={item} onPress={() => router.push(`/(app)/meeting/${item.id}`)} />
+          </Appear>
         )}
         onRefresh={refetch}
         refreshing={isRefetching}
-        ListEmptyComponent={null}
-        style={styles.list}
+        ListEmptyComponent={
+          isLoading ? (
+            <View>{[0, 1, 2].map((i) => <Skeleton key={i} />)}</View>
+          ) : (
+            <EmptyState
+              icon="calendar-outline"
+              title="No meetings yet"
+              subtitle="Schedule one here, or tell xTanBot who to meet and when."
+              action={{ label: "New meeting", onPress: newMeeting }}
+            />
+          )
+        }
       />
-    </View>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#0a0a0a",
-    paddingTop: 56,
-    paddingHorizontal: 20,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#ffffff",
-    letterSpacing: -1,
-  },
-  addButton: {
-    backgroundColor: "#FBBF24",
-    borderWidth: 3,
-    borderColor: "#000",
-    borderRadius: 0,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  addButtonText: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#000",
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#6b7280",
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  emptySection: {
-    fontSize: 13,
-    color: "#6b7280",
-    marginBottom: 12,
-  },
-  list: { flex: 1 },
+const s = StyleSheet.create({
+  list: { paddingHorizontal: 20, paddingBottom: 24, width: "100%", maxWidth: 820, alignSelf: "center" },
+  section: { color: colors.textMuted, fontSize: 13, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", marginTop: 8, marginBottom: 10 },
 });

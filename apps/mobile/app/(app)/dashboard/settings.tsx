@@ -7,13 +7,27 @@ import {
   StyleSheet,
   Modal,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import Animated, {
+  FadeIn,
+  ZoomIn,
+} from "react-native-reanimated";
+import {
+  Appear,
+  IconTile,
+  PrimaryButton,
+  Screen,
+  ScreenHeader,
+  type IconName,
+} from "../../../src/components/ui";
+import { colors, radius, type Tone } from "../../../src/theme";
 import { useRouter } from "expo-router";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import Input from "../../../src/components/common/Input";
 import { useAuthStore } from "../../../src/stores/auth.store";
 import { useMe } from "../../../src/hooks/useAuth";
-import { API_BASE_URL } from "../../../src/constants/config";
 import { authApi } from "../../../src/api/auth.api";
 import { queryKeys } from "../../../src/constants/queryKeys";
 import { getApiError } from "../../../src/api/client";
@@ -22,7 +36,7 @@ import { toastError, toastSuccess } from "../../../src/utils/toast";
 
 function getInitials(name: string): string {
   return name
-    .split(" ")
+    .split(/[\s_]+/)
     .map((w) => w[0])
     .join("")
     .toUpperCase()
@@ -52,6 +66,7 @@ export default function SettingsScreen() {
     }
   }, [freshUser]);
 
+  const tiny = useWindowDimensions().width < 380; // icon-only Edit so the name isn't cut off
   const startEdit = useCallback(() => {
     if (!user) return;
     setEditName(user.name);
@@ -103,41 +118,42 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.card}>
-        <View style={styles.avatar}>
-          {meLoading && !user ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.avatarText}>
-              {user ? getInitials(user.name) : "?"}
-            </Text>
-          )}
-        </View>
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScreenHeader title="Settings" />
 
-        {!editing ? (
-          <>
-            <Text style={styles.name}>{user?.name ?? "—"}</Text>
-            <Text style={styles.email}>{user?.email ?? "—"}</Text>
-            <Text style={styles.phoneDisplay}>{user?.phone ?? "—"}</Text>
-            <Pressable
-              onPress={startEdit}
-              disabled={!user}
-              style={({ pressed }) => [
-                styles.editProfileBtn,
-                pressed && styles.editProfilePressed,
-                !user && styles.editProfileDisabled,
-              ]}
-            >
-              <Text style={styles.editProfileText}>EDIT PROFILE</Text>
-            </Pressable>
-          </>
-        ) : (
-          <View style={styles.editForm}>
+        {/* Profile */}
+        <Appear index={1} style={styles.profile}>
+          <View style={styles.avatar}>
+            {meLoading && !user ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : (
+              <Text style={styles.avatarText}>{user ? getInitials(user.name) : "?"}</Text>
+            )}
+          </View>
+
+          {!editing ? (
+            <>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name} numberOfLines={1}>{user?.name ?? "—"}</Text>
+                <Text style={styles.email} numberOfLines={1}>{user?.email ?? "—"}</Text>
+              </View>
+              <Pressable
+                onPress={startEdit}
+                disabled={!user}
+                style={({ pressed }) => [styles.editBtn, pressed && styles.pressed, !user && { opacity: 0.5 }]}
+              >
+                <Ionicons name="create-outline" size={16} color={colors.accent} />
+                {tiny ? null : <Text style={styles.editText}>Edit</Text>}
+              </Pressable>
+            </>
+          ) : (
+            <Text style={styles.name}>Edit profile</Text>
+          )}
+        </Appear>
+
+        {editing ? (
+          <Appear style={styles.editForm}>
             <Input label="Full name" value={editName} onChangeText={setEditName} />
             <Input
               label="Phone number"
@@ -146,490 +162,202 @@ export default function SettingsScreen() {
               placeholder="+919876543210"
               keyboardType="phone-pad"
             />
-            <Text style={styles.tzLabel}>TIMEZONE</Text>
+            <Text style={styles.fieldLabel}>Timezone</Text>
             <View style={styles.tzGrid}>
-              {TIMEZONE_OPTIONS.map((tz) => (
-                <Pressable
-                  key={tz}
-                  onPress={() => setEditTimezone(tz)}
-                  style={[
-                    styles.tzChip,
-                    editTimezone === tz && styles.tzChipSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.tzChipText,
-                      editTimezone === tz && styles.tzChipTextSelected,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {tz.replace(/_/g, " ")}
-                  </Text>
-                </Pressable>
-              ))}
+              {TIMEZONE_OPTIONS.map((tz) => {
+                const on = editTimezone === tz;
+                return (
+                  <Pressable key={tz} onPress={() => setEditTimezone(tz)} style={[styles.tzChip, on && styles.tzChipOn]}>
+                    <Text style={[styles.tzChipText, on && styles.tzChipTextOn]} numberOfLines={1}>
+                      {tz.replace(/_/g, " ")}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-            <Pressable
-              onPress={handleSave}
-              disabled={updateMutation.isPending}
-              style={({ pressed }) => [
-                styles.saveBtn,
-                pressed && styles.savePressed,
-                updateMutation.isPending && styles.saveDisabled,
-              ]}
-            >
-              {updateMutation.isPending ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <Text style={styles.saveText}>SAVE CHANGES</Text>
-              )}
-            </Pressable>
-            <Pressable
-              onPress={cancelEdit}
-              disabled={updateMutation.isPending}
-              style={({ pressed }) => [styles.cancelBtn, pressed && styles.cancelPressed]}
-            >
-              <Text style={styles.cancelText}>CANCEL</Text>
-            </Pressable>
-          </View>
-        )}
-      </View>
+            <View style={styles.formActions}>
+              <PrimaryButton label="Cancel" tone="neutral" onPress={cancelEdit} disabled={updateMutation.isPending} style={{ flex: 1 }} />
+              <PrimaryButton label="Save" icon="checkmark" onPress={handleSave} loading={updateMutation.isPending} style={{ flex: 1 }} />
+            </View>
+          </Appear>
+        ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>ACCOUNT</Text>
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Timezone</Text>
-            <Text style={styles.rowValue} numberOfLines={2}>
-              {user?.timezone ?? "—"}
-            </Text>
+        <Appear index={2}>
+          <Text style={styles.groupTitle}>Account</Text>
+          <View style={styles.group}>
+            <Row icon="globe-outline" tone="info" label="Timezone" value={user?.timezone ?? "—"} />
+            <Row icon="call-outline" tone="success" label="Phone" value={user?.phone ?? "Not set"} />
+            <Row icon="mail-outline" tone="accent" label="Email" value={user?.email ?? "—"} last />
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Phone number</Text>
-            <Text style={styles.rowValue} numberOfLines={2}>
-              {user?.phone ?? "—"}
-            </Text>
-          </View>
-          <ApiStatusRow />
-          <View style={[styles.row, { borderBottomWidth: 0 }]}>
-            <Text style={styles.rowLabel}>App version</Text>
-            <Text style={styles.rowValue}>1.0.0-mvp</Text>
-          </View>
-        </View>
-      </View>
+        </Appear>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>SYSTEM</Text>
-        <View style={styles.card}>
-          <View style={[styles.row, { borderBottomWidth: 0 }]}>
-            <Text style={styles.rowLabel}>Backend URL</Text>
-            <Text style={styles.rowValue} numberOfLines={1}>
-              {API_BASE_URL}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>DANGER ZONE</Text>
-        <View style={styles.dangerCard}>
+        <Appear index={3}>
           <Pressable
             onPress={() => setShowSignOutModal(true)}
-            style={({ pressed }) => [styles.signOutButton, pressed && styles.signOutPressed]}
+            style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
           >
-            <Text style={styles.signOutText}>SIGN OUT</Text>
+            <Ionicons name="log-out-outline" size={20} color={colors.danger} />
+            <Text style={styles.signOutText}>Sign out</Text>
           </Pressable>
-        </View>
-      </View>
+        </Appear>
+      </ScrollView>
 
-      {/* ── Sign-out confirmation modal ── */}
+      {/* Sign-out confirmation */}
       <Modal
         visible={showSignOutModal}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowSignOutModal(false)}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setShowSignOutModal(false)}
-        >
-          <Pressable style={styles.modalCard} onPress={() => undefined}>
-            {/* Red accent bar */}
-            <View style={styles.modalAccentBar} />
-
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalBrand}>xTanBot</Text>
-              <Text style={styles.modalTitle}>SIGN OUT</Text>
+        <Animated.View entering={FadeIn.duration(160)} style={styles.backdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSignOutModal(false)} />
+          <Animated.View entering={ZoomIn.springify().damping(18)} style={styles.dialog}>
+            <IconTile icon="log-out-outline" tone="danger" size={52} />
+            <Text style={styles.dialogTitle}>Sign out?</Text>
+            <Text style={styles.dialogBody}>You'll need to log in again to use xTanBot on this device.</Text>
+            <View style={styles.formActions}>
+              <PrimaryButton label="Cancel" tone="neutral" onPress={() => setShowSignOutModal(false)} style={{ flex: 1 }} />
+              <PrimaryButton label="Sign out" tone="danger" onPress={() => void confirmSignOut()} style={{ flex: 1 }} />
             </View>
-
-            {/* Body */}
-            <Text style={styles.modalBody}>
-              Are you sure you want to sign out? You'll need to log back in to access your account.
-            </Text>
-
-            {/* Actions */}
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setShowSignOutModal(false)}
-                style={({ pressed }) => [
-                  styles.modalCancelBtn,
-                  pressed && styles.modalBtnPressed,
-                ]}
-              >
-                <Text style={styles.modalCancelText}>CANCEL</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => void confirmSignOut()}
-                style={({ pressed }) => [
-                  styles.modalSignOutBtn,
-                  pressed && styles.modalBtnPressed,
-                ]}
-              >
-                <Text style={styles.modalSignOutText}>SIGN OUT</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </Animated.View>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 
-function ApiStatusRow() {
-  const { data: ok, isLoading } = useQuery({
-    queryKey: ["health"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE_URL}/health`);
-      return res.ok;
-    },
-    refetchInterval: 30000,
-  });
-
+function Row({
+  icon,
+  tone,
+  label,
+  value,
+  valueNode,
+  last,
+}: {
+  icon: IconName;
+  tone: Tone;
+  label: string;
+  value?: string;
+  valueNode?: React.ReactNode;
+  last?: boolean;
+}) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>API status</Text>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <View
-          style={[
-            styles.statusDot,
-            { backgroundColor: isLoading ? "#6b7280" : ok ? "#22c55e" : "#ef4444" },
-          ]}
-        />
-        <Text style={styles.rowValue}>{isLoading ? "…" : ok ? "Online" : "Offline"}</Text>
-      </View>
+    <View style={[styles.row, !last && styles.rowDivider]}>
+      <IconTile icon={icon} tone={tone} size={34} />
+      <Text style={styles.rowLabel}>{label}</Text>
+      {valueNode ?? (
+        <Text style={styles.rowValue} numberOfLines={1}>
+          {value}
+        </Text>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0a0a0a",
-  },
-  scrollContent: {
-    padding: 16,
-    paddingTop: 56,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#6b7280",
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  card: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    borderRadius: 0,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 8,
-  },
-  row: {
+  content: { paddingBottom: 32, width: "100%", maxWidth: 820, alignSelf: "center" },
+  profile: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  rowLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#000000",
-  },
-  rowValue: {
-    fontSize: 14,
-    color: "#6b7280",
-    maxWidth: "58%",
-    textAlign: "right",
+    gap: 14,
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    backgroundColor: "#FBBF24",
-    borderWidth: 3,
-    borderColor: "#000",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.35)",
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginBottom: 12,
   },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: "900",
-    color: "#000000",
-  },
-  name: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#000000",
-    textAlign: "center",
-  },
-  email: {
-    fontSize: 14,
-    color: "#6b7280",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  phoneDisplay: {
-    fontSize: 14,
-    color: "#000000",
-    textAlign: "center",
-    marginBottom: 16,
-    fontWeight: "600",
-  },
-  editProfileBtn: {
-    backgroundColor: "#FBBF24",
-    borderWidth: 3,
-    borderColor: "#000",
-    paddingVertical: 14,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 8,
-  },
-  editProfilePressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 2, height: 2 },
-  },
-  editProfileDisabled: {
-    opacity: 0.45,
-  },
-  editProfileText: {
-    fontWeight: "900",
-    fontSize: 14,
-    color: "#000",
-  },
-  editForm: {
-    width: "100%",
-  },
-  tzLabel: {
-    color: "#000000",
-    fontWeight: "700",
-    fontSize: 13,
-    marginBottom: 8,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  tzGrid: {
+  avatarText: { color: colors.accent, fontSize: 20, fontWeight: "800" },
+  name: { color: colors.text, fontSize: 18, fontWeight: "700" },
+  email: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  editBtn: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
-  },
-  tzChip: {
-    borderWidth: 3,
-    borderColor: "#000",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: "#fff",
   },
-  tzChipSelected: {
-    backgroundColor: "#FBBF24",
+  editText: { color: colors.accent, fontWeight: "700", fontSize: 14 },
+  editForm: { marginHorizontal: 20, marginTop: -8, marginBottom: 24 },
+  fieldLabel: { color: colors.textMuted, fontSize: 13, fontWeight: "600", marginBottom: 8 },
+  tzGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 18 },
+  tzChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  tzChipText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#000",
-    maxWidth: 140,
-  },
-  tzChipTextSelected: {
-    fontWeight: "900",
-  },
-  saveBtn: {
-    backgroundColor: "#22c55e",
-    borderWidth: 3,
-    borderColor: "#000",
-    paddingVertical: 14,
-    alignItems: "center",
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 8,
-  },
-  savePressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 2, height: 2 },
-  },
-  saveDisabled: {
-    opacity: 0.6,
-  },
-  saveText: {
-    fontWeight: "900",
-    fontSize: 14,
-    color: "#000",
-  },
-  cancelBtn: {
-    borderWidth: 3,
-    borderColor: "#000",
-    paddingVertical: 12,
-    alignItems: "center",
-    backgroundColor: "#f3f4f6",
-  },
-  cancelPressed: {
-    opacity: 0.85,
-  },
-  cancelText: {
-    fontWeight: "900",
-    fontSize: 13,
-    color: "#000",
-  },
-  dangerCard: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#ef4444",
-    borderRadius: 0,
-    padding: 16,
-  },
-  signOutButton: {
-    backgroundColor: "#ef4444",
-    borderWidth: 3,
-    borderColor: "#000",
-    borderRadius: 0,
-    padding: 16,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 8,
-  },
-  signOutPressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 2, height: 2 },
-  },
-  signOutText: {
-    color: "#ffffff",
-    fontWeight: "900",
-    fontSize: 16,
-    textTransform: "uppercase",
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
+  tzChipOn: { backgroundColor: colors.accentSoft, borderColor: "rgba(251,191,36,0.5)" },
+  tzChipText: { color: colors.textMuted, fontSize: 13, fontWeight: "600", maxWidth: 160 },
+  tzChipTextOn: { color: colors.accent },
+  formActions: { flexDirection: "row", gap: 10, alignSelf: "stretch" },
 
-  // ── Sign-out modal ──────────────────────────────────────
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+  groupTitle: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginHorizontal: 24,
+    marginBottom: 8,
   },
-  modalCard: {
+  group: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingHorizontal: 14,
+  },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
+  // flexShrink + flex:1 lets long values truncate on one line instead of wrapping.
+  rowValue: { flex: 1, flexShrink: 1, color: colors.textMuted, fontSize: 14, textAlign: "right" },
+
+  signOut: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: radius.lg,
+    backgroundColor: colors.dangerSoft,
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.3)",
+  },
+  signOutText: { color: colors.danger, fontSize: 16, fontWeight: "700" },
+  pressed: { opacity: 0.85, transform: [{ scale: 0.985 }] },
+
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center", padding: 24 },
+  dialog: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    shadowColor: "#000",
-    shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 12,
-    overflow: "hidden",
-  },
-  modalAccentBar: {
-    height: 6,
-    backgroundColor: "#ef4444",
-  },
-  modalHeader: {
-    paddingTop: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 6,
-  },
-  modalBrand: {
-    fontSize: 11,
-    fontWeight: "900",
-    color: "#ef4444",
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#000000",
-    letterSpacing: 1,
-  },
-  modalBody: {
-    fontSize: 14,
-    color: "#374151",
-    lineHeight: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-  },
-  modalActions: {
-    flexDirection: "row",
-    borderTopWidth: 3,
-    borderTopColor: "#000000",
-  },
-  modalCancelBtn: {
-    flex: 1,
-    paddingVertical: 16,
     alignItems: "center",
-    backgroundColor: "#f3f4f6",
-    borderRightWidth: 1.5,
-    borderRightColor: "#000000",
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 24,
+    padding: 24,
   },
-  modalSignOutBtn: {
-    flex: 1,
-    paddingVertical: 16,
-    alignItems: "center",
-    backgroundColor: "#ef4444",
-    borderLeftWidth: 1.5,
-    borderLeftColor: "#000000",
-  },
-  modalBtnPressed: {
-    opacity: 0.8,
-  },
-  modalCancelText: {
-    fontWeight: "900",
-    fontSize: 13,
-    color: "#000000",
-    letterSpacing: 1,
-  },
-  modalSignOutText: {
-    fontWeight: "900",
-    fontSize: 13,
-    color: "#ffffff",
-    letterSpacing: 1,
-  },
+  dialogTitle: { color: colors.text, fontSize: 20, fontWeight: "800", marginTop: 4 },
+  dialogBody: { color: colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: "center", marginBottom: 8 },
 });

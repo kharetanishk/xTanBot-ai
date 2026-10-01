@@ -10,15 +10,18 @@ export type StoryCallInput = {
   objective?: string;
 };
 
+/** The DB enum uses underscores (no_answer, in_progress); the app uses hyphens everywhere. */
+const normalize = (c: Call): Call => ({ ...c, status: c.status.replace(/_/g, "-") as Call["status"] });
+
 export const callsApi = {
   list: async (): Promise<Call[]> => {
     const res = await apiClient.get<Call[]>("/calls");
-    return res.data;
+    return res.data.map(normalize);
   },
 
   get: async (id: string): Promise<Call> => {
     const res = await apiClient.get<Call>(`/calls/${id}`);
-    return res.data;
+    return normalize(res.data);
   },
 
   initiate: async (data: {

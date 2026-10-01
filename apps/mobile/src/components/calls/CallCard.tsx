@@ -1,106 +1,46 @@
-import { useState } from "react";
-import { Pressable, View, Text, StyleSheet } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import type { Call } from "../../types/api.types";
-import StatusBadge from "./StatusBadge";
-import { formatDate } from "../../utils/date.utils";
-import { formatDuration } from "../../utils/date.utils";
+import StatusBadge, { CALL_STATUS_TONE } from "./StatusBadge";
+import { formatDate, formatDuration } from "../../utils/date.utils";
+import { Card, IconTile } from "../ui";
+import { colors } from "../../theme";
 
-type CallCardProps = {
-  call: Call;
-  onPress: () => void;
-};
-
-export default function CallCard({ call, onPress }: CallCardProps) {
-  const [pressed, setPressed] = useState(false);
-  const isActive =
-    call.status === "in-progress" || call.status === "ringing" || call.status === "initiated";
+export default function CallCard({ call, onPress }: { call: Call; onPress: () => void }) {
+  const tone = CALL_STATUS_TONE[call.status] ?? "neutral";
+  const meta = [formatDate(call.createdAt), call.duration != null ? formatDuration(call.duration) : null]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      style={[
-        styles.card,
-        isActive && styles.cardActive,
-        pressed && styles.pressed,
-      ]}
-    >
-      <View style={styles.left}>
-        <StatusBadge status={call.status} />
-        <Text style={styles.sid} numberOfLines={1}>
-          {call.callSid.slice(-12)}
+    <Card onPress={onPress} style={s.card}>
+      <IconTile icon={tone === "danger" ? "call-outline" : "call"} tone={tone} size={42} />
+      <View style={s.body}>
+        <Text style={s.title} numberOfLines={1}>
+          {call.toNumber || "Unknown number"}
         </Text>
-      </View>
-      <View style={styles.center}>
-        <Text style={styles.date}>{formatDate(call.createdAt)}</Text>
-      </View>
-      <View style={styles.right}>
-        {call.duration != null && (
-          <Text style={styles.duration}>
-            {formatDuration(call.duration)}
+        <Text style={s.meta} numberOfLines={1}>
+          {meta}
+        </Text>
+        {call.summary ? (
+          <Text style={s.summary} numberOfLines={1}>
+            {call.summary}
           </Text>
-        )}
-        <Text style={styles.arrow}>→</Text>
+        ) : null}
       </View>
-    </Pressable>
+      <View style={s.right}>
+        <StatusBadge status={call.status} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
+      </View>
+    </Card>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    borderRadius: 0,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  cardActive: {
-    backgroundColor: "#FEF3C7",
-  },
-  pressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 1, height: 1 },
-  },
-  left: {
-    flex: 1,
-    gap: 4,
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-  },
-  right: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  sid: {
-    fontSize: 12,
-    fontFamily: "monospace",
-    color: "#6b7280",
-  },
-  date: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#000",
-  },
-  duration: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#000",
-  },
-  arrow: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#FBBF24",
-  },
+const s = StyleSheet.create({
+  card: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10, padding: 14 },
+  body: { flex: 1, gap: 2 },
+  title: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  meta: { color: colors.textMuted, fontSize: 13 },
+  summary: { color: colors.textSubtle, fontSize: 12, marginTop: 2 },
+  right: { flexDirection: "row", alignItems: "center", gap: 6 },
 });

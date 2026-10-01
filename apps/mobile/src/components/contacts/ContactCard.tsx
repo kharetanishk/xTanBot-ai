@@ -1,81 +1,39 @@
-import { useState } from "react";
-import { Pressable, View, Text, StyleSheet } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import type { Contact } from "../../types/api.types";
 import ContactAvatar from "./ContactAvatar";
+import { Card } from "../ui";
+import { colors } from "../../theme";
 
-type ContactCardProps = {
-  contact: Contact;
-  onPress: () => void;
-};
-
-export default function ContactCard({ contact, onPress }: ContactCardProps) {
-  const [pressed, setPressed] = useState(false);
+export default function ContactCard({ contact, onPress }: { contact: Contact; onPress: () => void }) {
   const detail = contact.phone || contact.email;
-
   return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      style={[styles.card, pressed && styles.pressed]}
-    >
+    <Card onPress={onPress} style={s.card}>
       <ContactAvatar name={contact.name} size={44} />
-      <View style={styles.info}>
-        <Text style={styles.name}>{contact.name}</Text>
-        {detail ? <Text style={styles.detail}>{detail}</Text> : null}
+      <View style={s.info}>
+        <Text style={s.name} numberOfLines={1}>
+          {contact.name}
+        </Text>
+        {detail ? (
+          <Text style={s.detail} numberOfLines={1}>
+            {detail}
+          </Text>
+        ) : null}
         {contact.company ? (
-          <Text style={styles.company}>{contact.company}</Text>
+          <Text style={s.company} numberOfLines={1}>
+            {contact.company}
+          </Text>
         ) : null}
       </View>
-      <Text style={styles.arrow}>→</Text>
-    </Pressable>
+      <Ionicons name="chevron-forward" size={16} color={colors.textSubtle} />
+    </Card>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    borderRadius: 0,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  pressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 1, height: 1 },
-  },
-  info: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#000",
-  },
-  detail: {
-    fontSize: 13,
-    color: "#666",
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  company: {
-    fontSize: 12,
-    color: "#999",
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  arrow: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#FBBF24",
-  },
+const s = StyleSheet.create({
+  card: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10, padding: 14 },
+  info: { flex: 1, gap: 2 },
+  name: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  detail: { color: colors.textMuted, fontSize: 13 },
+  company: { color: colors.textSubtle, fontSize: 12 },
 });

@@ -1,96 +1,28 @@
 import { Tabs } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import type { ComponentProps } from "react";
-
-type IonName = ComponentProps<typeof Ionicons>["name"];
-
-function tabBarIcon(outline: IonName, solid: IonName) {
-  return ({
-    color,
-    focused,
-    size,
-  }: {
-    color: string;
-    focused: boolean;
-    size: number;
-  }) => (
-    <Ionicons
-      name={focused ? solid : outline}
-      size={Math.min(size + 2, 26)}
-      color={color}
-    />
-  );
-}
+import { useWindowDimensions } from "react-native";
+import TabBar from "../../../src/components/ui/TabBar";
+import { colors } from "../../../src/theme";
 
 export default function TabLayout() {
+  // Desktop web: left sidebar with every section; phones/tablets: floating bottom bar.
+  const sidebar = useWindowDimensions().width >= 1024;
   return (
     <Tabs
+      tabBar={(props) => <TabBar {...props} sidebar={sidebar} />}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: "#0a0a0a",
-          borderTopWidth: 3,
-          borderTopColor: "#FBBF24",
-          height: 60,
-          paddingBottom: 8,
-        },
-        tabBarActiveTintColor: "#FBBF24",
-        tabBarInactiveTintColor: "#6b7280",
-        tabBarLabelStyle: { fontWeight: "900", fontSize: 10 },
+        tabBarPosition: sidebar ? "left" : "bottom",
+        animation: "fade",
+        sceneStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Dashboard",
-          tabBarIcon: tabBarIcon("grid-outline", "grid"),
-        }}
-      />
-      <Tabs.Screen
-        name="calls"
-        options={{
-          title: "Calls",
-          tabBarIcon: tabBarIcon("call-outline", "call"),
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: "Chat",
-          tabBarIcon: tabBarIcon(
-            "chatbubble-ellipses-outline",
-            "chatbubble-ellipses",
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="meetings"
-        options={{
-          title: "Meetings",
-          tabBarIcon: tabBarIcon("calendar-outline", "calendar"),
-        }}
-      />
-      <Tabs.Screen
-        name="alarms"
-        options={{
-          title: "Alarms",
-          tabBarIcon: tabBarIcon("alarm-outline", "alarm"),
-        }}
-      />
-      <Tabs.Screen
-        name="contacts"
-        options={{
-          title: "Contacts",
-          tabBarIcon: tabBarIcon("people-outline", "people"),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: tabBarIcon("settings-outline", "settings"),
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Home" }} />
+      <Tabs.Screen name="chat" options={{ title: "Chat" }} />
+      <Tabs.Screen name="calls" options={{ title: "Calls" }} />
+      <Tabs.Screen name="alarms" options={{ title: "Alarms" }} />
+      <Tabs.Screen name="meetings" options={{ title: "Meetings" }} />
+      <Tabs.Screen name="contacts" options={{ title: "Contacts" }} />
+      <Tabs.Screen name="settings" options={{ title: "Settings" }} />
     </Tabs>
   );
 }

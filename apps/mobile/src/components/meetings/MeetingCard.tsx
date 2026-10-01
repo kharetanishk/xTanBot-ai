@@ -1,82 +1,59 @@
-import { Pressable, View, Text, StyleSheet } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import type { Meeting } from "../../types/api.types";
-import { formatDate } from "../../utils/date.utils";
 import MeetingStatusBadge from "./MeetingStatusBadge";
+import { Card } from "../ui";
+import { colors, radius } from "../../theme";
 
-type MeetingCardProps = {
-  meeting: Meeting;
-  onPress: () => void;
-};
+const t = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 
-function formatTimeRange(start: string, end: string): string {
-  const s = new Date(start);
-  const e = new Date(end);
-  return `${s.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} – ${e.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`;
-}
+export default function MeetingCard({ meeting, onPress }: { meeting: Meeting; onPress: () => void }) {
+  const start = new Date(meeting.startTime);
+  const n = meeting.attendees.length;
 
-export default function MeetingCard({ meeting, onPress }: MeetingCardProps) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-      <View style={styles.top}>
-        <Text style={styles.title} numberOfLines={1}>
+    <Card onPress={onPress} style={s.card}>
+      {/* Calendar-style date block */}
+      <View style={s.date}>
+        <Text style={s.month}>{start.toLocaleDateString("en-IN", { month: "short" }).toUpperCase()}</Text>
+        <Text style={s.day}>{start.getDate()}</Text>
+      </View>
+      <View style={s.body}>
+        <Text style={s.title} numberOfLines={1}>
           {meeting.title}
         </Text>
-        <MeetingStatusBadge status={meeting.status} />
+        <View style={s.metaRow}>
+          <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+          <Text style={s.meta}>
+            {t(meeting.startTime)} – {t(meeting.endTime)}
+          </Text>
+        </View>
+        <View style={s.metaRow}>
+          <Ionicons name="people-outline" size={13} color={colors.textMuted} />
+          <Text style={s.meta}>
+            {n} attendee{n !== 1 ? "s" : ""}
+          </Text>
+        </View>
       </View>
-      <Text style={styles.date}>{formatDate(meeting.startTime)}</Text>
-      <Text style={styles.time}>{formatTimeRange(meeting.startTime, meeting.endTime)}</Text>
-      <Text style={styles.attendees}>
-        {meeting.attendees.length} attendee{meeting.attendees.length !== 1 ? "s" : ""}
-      </Text>
-    </Pressable>
+      <MeetingStatusBadge status={meeting.status} />
+    </Card>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    borderRadius: 0,
-    padding: 16,
-    marginBottom: 12,
-    shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  pressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 1, height: 1 },
-  },
-  top: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#000",
-    flex: 1,
-    marginRight: 8,
-  },
+const s = StyleSheet.create({
+  card: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 10, padding: 14 },
   date: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#000",
-    marginBottom: 2,
+    width: 52,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: colors.infoSoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  time: {
-    fontSize: 12,
-    color: "#6b7280",
-    marginBottom: 4,
-  },
-  attendees: {
-    fontSize: 11,
-    color: "#6b7280",
-    fontWeight: "700",
-  },
+  month: { color: colors.info, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 },
+  day: { color: colors.text, fontSize: 20, fontWeight: "800", marginTop: -1 },
+  body: { flex: 1, gap: 3 },
+  title: { color: colors.text, fontSize: 15, fontWeight: "700", marginBottom: 1 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  meta: { color: colors.textMuted, fontSize: 13 },
 });

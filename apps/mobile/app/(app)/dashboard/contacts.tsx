@@ -1,154 +1,98 @@
-import { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  Pressable,
-  StyleSheet,
-} from "react-native";
+import { useEffect, useState } from "react";
+import { FlatList, StyleSheet, TextInput, View, Platform } from "react-native";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useContacts } from "../../../src/hooks/useContacts";
 import ContactCard from "../../../src/components/contacts/ContactCard";
+import { Appear, EmptyState, IconButton, Screen, ScreenHeader, Skeleton } from "../../../src/components/ui";
+import { colors, radius } from "../../../src/theme";
 
 export default function ContactsScreen() {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setDebounced(search), 300);
+    return () => clearTimeout(t);
   }, [search]);
 
-  const { data: contacts, isLoading, refetch, isRefetching } = useContacts(
-    debouncedSearch || undefined,
-  );
+  const { data: contacts, isLoading, refetch, isRefetching } = useContacts(debounced || undefined);
+  const addContact = () => router.push("/(app)/contact/new");
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.title}>CONTACTS</Text>
-        <Pressable
-          style={styles.addButton}
-          onPress={() => router.push("/(app)/contact/new")}
-        >
-          <Text style={styles.addButtonText}>+</Text>
-        </Pressable>
-      </View>
-
-      <TextInput
-        style={styles.searchInput}
-        value={search}
-        onChangeText={setSearch}
-        placeholder="Search contacts..."
-        placeholderTextColor="#666666"
-        autoCapitalize="none"
-        returnKeyType="search"
+    <Screen>
+      <ScreenHeader
+        title="Contacts"
+        subtitle={contacts?.length ? `${contacts.length} people` : "People xTanBot can reach"}
+        right={<IconButton icon="person-add" onPress={addContact} accessibilityLabel="Add contact" />}
       />
-
+      <Appear style={s.searchWrap}>
+        <Ionicons name="search" size={18} color={colors.textSubtle} />
+        <TextInput
+          style={s.search}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search by name, phone or company"
+          placeholderTextColor={colors.textSubtle}
+          autoCapitalize="none"
+          returnKeyType="search"
+        />
+        {search ? <Ionicons name="close-circle" size={18} color={colors.textSubtle} onPress={() => setSearch("")} /> : null}
+      </Appear>
       <FlatList
         data={contacts}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <ContactCard
-            contact={item}
-            onPress={() => router.push(`/(app)/contact/${item.id}`)}
-          />
+        contentContainerStyle={s.list}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item, index }) => (
+          <Appear index={index}>
+            <ContactCard contact={item} onPress={() => router.push(`/(app)/contact/${item.id}`)} />
+          </Appear>
         )}
         onRefresh={refetch}
         refreshing={isRefetching}
         ListEmptyComponent={
           isLoading ? (
-            <View>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={styles.skeleton} />
-              ))}
-            </View>
+            <View>{[0, 1, 2].map((i) => <Skeleton key={i} />)}</View>
+          ) : debounced ? (
+            <EmptyState icon="search" title="No matches" subtitle={`Nobody matches “${debounced}”.`} />
           ) : (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>NO CONTACTS</Text>
-              <Text style={styles.emptySubtitle}>
-                Tap + to add your first contact
-              </Text>
-            </View>
+            <EmptyState
+              icon="people-outline"
+              title="No contacts yet"
+              subtitle="Add people so xTanBot can call or message them by name."
+              action={{ label: "Add contact", onPress: addContact }}
+            />
           )
         }
       />
-    </View>
+    </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#0a0a0a",
-    paddingTop: 56,
-    paddingHorizontal: 20,
-  },
-  header: {
+const s = StyleSheet.create({
+  searchWrap: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#ffffff",
-    letterSpacing: -1,
-  },
-  addButton: {
-    backgroundColor: "#FBBF24",
-    borderWidth: 3,
-    borderColor: "#000",
-    borderRadius: 0,
-    width: 44,
-    height: 44,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  addButtonText: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#000",
-  },
-  searchInput: {
-    backgroundColor: "#1a1a1a",
-    borderWidth: 3,
-    borderColor: "#333333",
-    borderRadius: 0,
-    color: "#ffffff",
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    maxWidth: 780,
+    alignSelf: Platform.OS === "web" ? "center" : "auto",
+    width: Platform.OS === "web" ? "100%" : undefined,
+  },
+  search: {
+    flex: 1,
+    color: colors.text,
     fontSize: 15,
-    marginBottom: 16,
+    paddingVertical: 12,
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
   },
-  skeleton: {
-    backgroundColor: "#1a1a1a",
-    height: 72,
-    borderWidth: 3,
-    borderColor: "#333",
-    borderRadius: 0,
-    marginBottom: 12,
-  },
-  empty: {
-    alignItems: "center",
-    marginTop: 64,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#ffffff",
-  },
-  emptySubtitle: {
-    color: "#666",
-    marginTop: 8,
-    fontSize: 14,
-  },
+  list: { paddingHorizontal: 20, paddingBottom: 24, width: "100%", maxWidth: 820, alignSelf: "center" },
 });

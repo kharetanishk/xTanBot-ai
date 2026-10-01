@@ -20,17 +20,12 @@ export default function AttendeeChip({ email }: AttendeeChipProps) {
 const styles = StyleSheet.create({
   chip: {
     alignSelf: "flex-start",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderWidth: 2,
-    borderColor: "#6b7280",
-    borderRadius: 0,
+    backgroundColor: "#1f2937",
+    borderRadius: 999,
     marginRight: 8,
     marginBottom: 8,
   },
-  text: {
-    fontSize: 12,
-    color: "#000",
-    fontWeight: "700",
-  },
+  text: { fontSize: 13, color: "#e5e7eb", fontWeight: "600" },
 });
