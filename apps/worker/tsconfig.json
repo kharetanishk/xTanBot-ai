@@ -2,22 +2,13 @@
   "extends": "@xtanbot/tsconfig/node.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
-    "paths": {
-      "@xtanbot/config": ["../../packages/config/dist/index.d.ts"],
-      "@xtanbot/logger": ["../../packages/logger/dist/index.d.ts"],
-      "@xtanbot/db": ["../../packages/db/dist/index.d.ts"],
-      "@xtanbot/redis": ["../../packages/redis/dist/index.d.ts"],
-      "@xtanbot/queues": ["../../packages/queues/dist/index.d.ts"],
-      "@xtanbot/events": ["../../packages/events/dist/index.d.ts"],
-      "@xtanbot/ai-core": ["../../packages/ai-core/dist/index.d.ts"],
-      "@xtanbot/voice-pipeline": [
-        "../../packages/voice-pipeline/dist/index.d.ts"
-      ],
-      "@xtanbot/zod-schemas": ["../../packages/zod-schemas/dist/index.d.ts"],
-      "@xtanbot/observability": ["../../packages/observability/dist/index.d.ts"]
-    }
+    "rootDir": "src"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

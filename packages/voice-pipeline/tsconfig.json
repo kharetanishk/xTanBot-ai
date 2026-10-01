@@ -4,6 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
+      "@xtanbot/ai-core": ["../ai-core/dist/index.d.ts"],
       "@xtanbot/config": ["../config/dist/index.d.ts"],
       "@xtanbot/db": ["../db/dist/index.d.ts"],
       "@xtanbot/logger": ["../logger/dist/index.d.ts"],

@@ -8,6 +8,8 @@ export const AgentRespondedEventSchema = z.object({
   toolsUsed: z.array(z.string()),
   inputTokens: z.number(),
   outputTokens: z.number(),
+  /** Already spoken by the in-process voice path — don't play it again. */
+  streamed: z.boolean().optional(),
   timestamp: z.string().datetime(),
 });
 

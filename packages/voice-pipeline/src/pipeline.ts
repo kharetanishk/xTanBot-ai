@@ -1,10 +1,10 @@
 import { createLogger } from "@xtanbot/logger";
 import { redisConnection, setSession, getSession, deleteSession } from "@xtanbot/redis";
-import { enqueueAgentJob } from "@xtanbot/queues";
+import { runVoiceTurn, fallbackPhraseFor, createSentenceChunker } from "@xtanbot/ai-core";
 import { emit } from "@xtanbot/events";
 import { config } from "@xtanbot/config";
 import { callRepository, userRepository, prisma } from "@xtanbot/db";
-import { counter, gauge } from "@xtanbot/observability";
+import { counter, gauge, histogram } from "@xtanbot/observability";
 import {
   createStreamHandler,
   buildTwilioAudioMessage,
@@ -39,6 +39,19 @@ const bargeInTotal = counter(
   "xtanbot_barge_in_total",
   "Total number of barge-in interruptions detected",
 );
+const voiceFirstAudioMs = histogram(
+  "xtanbot_voice_first_audio_ms",
+  "Time from STT final transcript to first reply audio sent to Twilio in ms",
+  [250, 500, 750, 1000, 1500, 2000, 3000, 5000],
+);
+
+/** Per-turn latency marks (epoch ms); gen is the TTS generation of the reply. */
+type TurnTiming = {
+  sttFinalAt: number;
+  llmFirstTokenAt?: number;
+  firstSentenceAt?: number;
+  gen?: number;
+};
 
 /** Omit short reply words — they are often the entire user turn on a phone call. */
 const FILLER_WORDS = [
@@ -112,6 +125,12 @@ export function createPipeline(
     const MIN_TRANSCRIPT_LENGTH = 1;
     const MIN_WORD_COUNT = 1;
     let enqueueDebounceTimer: NodeJS.Timeout | null = null;
+    let lastSttFinalAt = 0;
+    let turnTiming: TurnTiming | null = null;
+    /** Turns run one at a time so session history writes never interleave. */
+    let voiceTurnChain: Promise<void> = Promise.resolve();
+    /** Sentences of the current reply play in order through this chain. */
+    let ttsChain: Promise<void> = Promise.resolve();
     /** Finals arriving inside the debounce window are appended, not replaced. */
     let pendingTranscript: string | null = null;
     /** Avoid Twilio clear on an empty outbound buffer (can contribute to 31951). */
@@ -190,6 +209,7 @@ export function createPipeline(
     pendingTranscript = pendingTranscript
       ? `${pendingTranscript} ${cleaned}`
       : cleaned;
+    lastSttFinalAt = Date.now();
 
     // Debounce: if another final fires within 350 ms (user still speaking),
     // append it and restart the timer so no segment is lost.
@@ -219,71 +239,155 @@ export function createPipeline(
       }
       lastTranscript = finalTranscript;
 
-      enqueueAgentJob({
-        sessionId: sessionSnapshot.sessionId,
-        userId: sessionSnapshot.userId,
-        transcript: finalTranscript,
-        callSid: sessionSnapshot.callSid,
-        conversationId: sessionSnapshot.conversationId,
-      })
-        .then(() => {
-          logger.info(
-            { sessionId: sessionSnapshot.sessionId },
-            "Agent job queued successfully",
-          );
-        })
-        .catch((err) => {
-          logger.error(
-            {
-              err,
-              sessionId: sessionSnapshot.sessionId,
-              transcript: finalTranscript,
-            },
-            "Failed to enqueue agent job — no AI reply for this turn",
-          );
-        });
+      const sttFinalAt = lastSttFinalAt;
+      // ponytail: after a barge-in the next turn waits for the abandoned LLM stream to
+      // finish (it's usually done by then); pass an AbortSignal into runAgent if that bites.
+      voiceTurnChain = voiceTurnChain.then(() =>
+        runStreamedTurn(sessionSnapshot, finalTranscript, sttFinalAt),
+      );
     }, 350);
   }
 
-  async function handleTTSResponse(text: string): Promise<void> {
-    const gen = ++ttsGeneration;
+  /**
+   * In-process voice turn: LLM tokens → sentence chunker → TTS, one sentence at a time.
+   * Barge-in (or any newer reply) bumps ttsGeneration; from then on the rest of the
+   * LLM stream is ignored and nothing more is spoken for this reply.
+   */
+  async function runStreamedTurn(
+    session: PipelineSession,
+    transcript: string,
+    sttFinalAt: number,
+  ): Promise<void> {
+    const timing: TurnTiming = { sttFinalAt };
+    turnTiming = timing;
+    let replyGen: number | null = null;
+    const abandoned = () =>
+      currentSession !== session ||
+      (replyGen !== null && replyGen !== ttsGeneration);
+
+    const speak = (sentence: string) => {
+      if (abandoned()) return;
+      const first = replyGen === null;
+      if (first) timing.firstSentenceAt = Date.now();
+      handleTTSResponse(sentence, !first).catch((err) =>
+        logger.error({ err, sessionId: session.sessionId }, "Sentence TTS failed"),
+      );
+      if (first) {
+        replyGen = ttsGeneration;
+        timing.gen = replyGen;
+      }
+    };
+    const chunker = createSentenceChunker(speak);
+
+    try {
+      await runVoiceTurn(
+        {
+          sessionId: session.sessionId,
+          userId: session.userId,
+          transcript,
+          callSid: session.callSid,
+          conversationId: session.conversationId,
+        },
+        {
+          onText: (delta) => {
+            timing.llmFirstTokenAt ??= Date.now();
+            if (!abandoned()) chunker.push(delta);
+          },
+        },
+      );
+      if (!abandoned()) chunker.flush();
+    } catch (err) {
+      logger.error(
+        { err, sessionId: session.sessionId, transcript },
+        "Voice turn failed — speaking fallback phrase",
+      );
+      speak(fallbackPhraseFor(err));
+    }
+  }
+
+  function recordFirstAudio(gen: number): void {
+    const t = turnTiming;
+    if (!t || t.gen !== gen) return;
+    turnTiming = null;
+    const now = Date.now();
+    const since = (at?: number) => (at ? at - t.sttFinalAt : null);
+    try {
+      voiceFirstAudioMs.observe(now - t.sttFinalAt);
+    } catch (err) {
+      logger.error({ err }, "Failed to record voice_first_audio_ms metric");
+    }
+    logger.info(
+      {
+        sessionId: currentSession?.sessionId,
+        sttToLlmFirstTokenMs: since(t.llmFirstTokenAt),
+        sttToFirstSentenceMs: since(t.firstSentenceAt),
+        sttToFirstAudioMs: now - t.sttFinalAt,
+      },
+      "Voice turn latency (stt_final -> llm_first_token -> first_sentence_flushed -> first_tts_audio_chunk)",
+    );
+  }
+
+  /**
+   * Speak text. A new reply (append = false) takes a new generation, aborts and clears
+   * whatever was playing, and restarts the barge-in grace. append = true queues the
+   * text behind the current reply's sentences in the same generation.
+   */
+  async function handleTTSResponse(text: string, append = false): Promise<void> {
+    let gen = ttsGeneration;
+    if (!append) {
+      gen = ++ttsGeneration;
+      currentTTSAbort?.abort();
+      currentTTSAbort = null;
+      ttsChain = Promise.resolve();
+    }
     isSpeaking = true;
-    consecutiveLoudInboundChunks = 0;
 
     if (!currentStreamSid) {
       isSpeaking = false;
       return;
     }
 
-    bargeInGraceUntil = Date.now() + BARGE_IN_GRACE_MS;
-
-    logger.debug({ textLength: text.length }, "Streaming TTS to Twilio");
-
-    if (hasBufferedOutboundMedia) {
-      wsSend(buildTwilioClearMessage(currentStreamSid));
+    if (!append) {
+      consecutiveLoudInboundChunks = 0;
+      bargeInGraceUntil = Date.now() + BARGE_IN_GRACE_MS;
+      if (hasBufferedOutboundMedia) {
+        wsSend(buildTwilioClearMessage(currentStreamSid));
+      }
     }
 
-    const abortController = new AbortController();
-    currentTTSAbort = abortController;
+    logger.debug({ textLength: text.length, append }, "Streaming TTS to Twilio");
+
+    const play = ttsChain.then(async () => {
+      // Barge-in or a newer reply happened while this sentence was queued.
+      if (gen !== ttsGeneration || !currentStreamSid) return;
+      const abortController = new AbortController();
+      currentTTSAbort = abortController;
+      try {
+        await streamTextToSpeech(
+          text,
+          async (audioBase64) => {
+            if (gen !== ttsGeneration || !currentStreamSid) return;
+            if (!audioBase64?.length) return;
+            wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
+            hasBufferedOutboundMedia = true;
+            recordFirstAudio(gen);
+          },
+          abortController.signal,
+          currentVoiceSettings,
+        );
+      } finally {
+        if (currentTTSAbort === abortController) currentTTSAbort = null;
+      }
+    });
+    const tail = play.catch(() => undefined);
+    ttsChain = tail;
 
     try {
-      await streamTextToSpeech(
-        text,
-        async (audioBase64) => {
-          if (gen !== ttsGeneration || !currentStreamSid) return;
-          if (!audioBase64?.length) return;
-          wsSend(buildTwilioAudioMessage(currentStreamSid, audioBase64));
-          hasBufferedOutboundMedia = true;
-        },
-        abortController.signal,
-        currentVoiceSettings,
-      );
+      await play;
     } finally {
-      // Only the newest utterance owns these — a superseded stream must not
-      // clear isSpeaking for the reply that replaced it.
-      if (gen === ttsGeneration) {
+      // Only the last queued sentence of the newest reply clears isSpeaking.
+      if (gen === ttsGeneration && ttsChain === tail) {
         isSpeaking = false;
-        currentTTSAbort = null;
       }
     }
   }
@@ -663,6 +767,7 @@ export function createPipeline(
     }
     pendingTranscript = null;
     lastTranscript = "";
+    turnTiming = null;
 
     logger.info({ callSid, streamSid }, "Pipeline session ending");
 
