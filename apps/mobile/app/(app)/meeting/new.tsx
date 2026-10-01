@@ -8,6 +8,8 @@ import {
   StyleSheet,
   Modal,
   FlatList,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +19,42 @@ import { useAuthStore } from "../../../src/stores/auth.store";
 import { parseError } from "../../../src/utils/error.utils";
 import ErrorMessage from "../../../src/components/common/ErrorMessage";
 import type { Contact } from "../../../src/types/api.types";
+import { Screen, GradientIcon, PrimaryButton, Appear } from "../../../src/components/ui";
+
+// ── Quick picks ───────────────────────────────────────────────────────
+const NEXT_DAYS = Array.from({ length: 14 }, (_, i) => {
+  const d = new Date();
+  d.setDate(d.getDate() + i);
+  return d;
+});
+const SLOTS = Array.from({ length: 22 }, (_, i) => {
+  const mins = 8 * 60 + i * 30; // 08:00 → 18:30
+  return { h: Math.floor(mins / 60), m: mins % 60 };
+});
+const DURATIONS = [15, 30, 45, 60, 90];
+
+function Chip({ label, sub, active, onPress }: { label: string; sub?: string; active: boolean; onPress(): void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [qp.chip, active && qp.chipOn, pressed && { opacity: 0.8 }]}>
+      {sub ? <Text style={[qp.chipSub, active && qp.chipTextOn]}>{sub}</Text> : null}
+      <Text style={[qp.chipText, active && qp.chipTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const qp = StyleSheet.create({
+  row: { gap: 8, paddingBottom: 4 },
+  chip: {
+    minWidth: 58, alignItems: "center", paddingHorizontal: 12, paddingVertical: 9,
+    borderRadius: 12, backgroundColor: "#0f172a", borderWidth: 1, borderColor: "#1f2937",
+  },
+  chipOn: { backgroundColor: "#FBBF24", borderColor: "#FBBF24" },
+  chipSub: { fontSize: 10, fontWeight: "800", color: "#6b7280", letterSpacing: 1, marginBottom: 2 },
+  chipText: { fontSize: 14, fontWeight: "800", color: "#e5e7eb" },
+  chipTextOn: { color: "#000" },
+  or: { fontSize: 11, color: "#4b5563", fontWeight: "700", letterSpacing: 1.2, marginTop: 16, marginBottom: 10 },
+  label: { fontSize: 10, fontWeight: "800", color: "#6b7280", letterSpacing: 1.5, marginBottom: 8, marginTop: 4 },
+});
 
 // ── helpers ───────────────────────────────────────────────────────────
 function pad2(n: string) {
@@ -72,7 +110,7 @@ const sec = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   label:  { fontSize: 12, fontWeight: "900", color: "#9ca3af", letterSpacing: 1.5, flex: 1 },
   badge:  { backgroundColor: "rgba(251,191,36,0.15)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  badgeText: { fontSize: 9, fontWeight: "900", color: "#FBBF24", letterSpacing: 1 },
+  badgeText: { fontSize: 9, fontWeight: "800", color: "#FBBF24", letterSpacing: 1 },
 });
 
 // ── Date picker ───────────────────────────────────────────────────────
@@ -230,8 +268,8 @@ const dt = StyleSheet.create({
   segYear: { flex: 1.6 },
   seg: {
     width: "100%",
-    backgroundColor: "#1a1a2e",
-    borderWidth: 2,
+    backgroundColor: "#111827",
+    borderWidth: 1,
     borderColor: "#374151",
     borderRadius: 10,
     paddingHorizontal: 4,
@@ -242,7 +280,7 @@ const dt = StyleSheet.create({
   },
   segLabel: {
     fontSize: 9,
-    fontWeight: "900",
+    fontWeight: "800",
     color: "#6b7280",
     letterSpacing: 1.5,
     marginBottom: 4,
@@ -279,6 +317,7 @@ function ContactPicker({
 }) {
   const [open,   setOpen]   = useState(false);
   const [search, setSearch] = useState("");
+  const wide = useWindowDimensions().width >= 760;
 
   const filtered = contacts.filter((c) => {
     if (!search.trim()) return true;
@@ -324,12 +363,12 @@ function ContactPicker({
       </Pressable>
 
       {/* Bottom-sheet modal */}
-      <Modal visible={open} animationType="slide" transparent>
+      <Modal visible={open} animationType={wide ? "fade" : "slide"} transparent>
         <View style={cp.backdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
         </View>
-        <View style={cp.sheet}>
-          <View style={cp.handle} />
+        <View style={[cp.sheet, wide && cp.dialog]}>
+          {!wide && <View style={cp.handle} />}
           <Text style={cp.sheetTitle}>SELECT ATTENDEES</Text>
 
           {/* Search */}
@@ -428,8 +467,8 @@ const cp = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#1a1a2e",
-    borderWidth: 2,
+    backgroundColor: "#111827",
+    borderWidth: 1,
     borderColor: "#374151",
     borderRadius: 10,
     paddingHorizontal: 14,
@@ -453,12 +492,17 @@ const cp = StyleSheet.create({
     paddingTop: 12,
     paddingHorizontal: 20,
   },
+  dialog: {
+    bottom: undefined, top: "12%", left: "50%", right: undefined,
+    width: 520, marginLeft: -260, height: "76%",
+    borderRadius: 24, borderWidth: 1, borderColor: "#1f2937", paddingTop: 22,
+  },
   handle: {
     width: 40, height: 4, backgroundColor: "#374151",
     borderRadius: 2, alignSelf: "center", marginBottom: 16,
   },
   sheetTitle: {
-    fontSize: 12, fontWeight: "900", color: "#9ca3af",
+    fontSize: 12, fontWeight: "800", color: "#9ca3af",
     letterSpacing: 2, marginBottom: 14,
   },
 
@@ -493,7 +537,7 @@ const cp = StyleSheet.create({
   avatar: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: "#1f2937",
-    borderWidth: 2, borderColor: "#374151",
+    borderWidth: 1, borderColor: "#374151",
     alignItems: "center", justifyContent: "center",
   },
   avatarSel:        { borderColor: "#FBBF24", backgroundColor: "rgba(251,191,36,0.15)" },
@@ -518,7 +562,7 @@ const cp = StyleSheet.create({
     paddingVertical: 15,
     alignItems: "center",
   },
-  doneBtnText: { color: "#000", fontWeight: "900", fontSize: 15, letterSpacing: 1 },
+  doneBtnText: { color: "#000", fontWeight: "800", fontSize: 15, letterSpacing: 1 },
 });
 
 // ── Main screen ───────────────────────────────────────────────────────
@@ -598,128 +642,264 @@ export default function NewMeetingScreen() {
     );
   }
 
-  return (
-    <ScrollView
-      style={s.screen}
-      contentContainerStyle={s.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* Header */}
-      <Pressable
-        onPress={() => router.canGoBack() ? router.back() : router.replace("/(app)/dashboard/meetings")}
-        style={s.backBtn}
-      >
-        <Text style={s.backText}>← BACK</Text>
-      </Pressable>
-      <Text style={s.pageTitle}>NEW MEETING</Text>
-      <Text style={s.pageSub}>Fill in the details to schedule a meeting</Text>
+  const { width } = useWindowDimensions();
+  const wide = width >= 1000;
+  const back = () => (router.canGoBack() ? router.back() : router.replace("/(app)/dashboard/meetings"));
 
-      {/* ── Title ── */}
-      <View style={s.card}>
-        <SectionHeader icon="pencil-outline" label="MEETING TITLE" required />
-        <TextInput
-          style={s.input}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="e.g. Product sync with team"
-          placeholderTextColor="#4b5563"
-          returnKeyType="next"
-        />
-      </View>
+  const isDay = (d: Date) =>
+    Number(day) === d.getDate() && Number(month) === d.getMonth() + 1 && Number(year) === d.getFullYear();
+  const pickDay = (d: Date) => {
+    setDay(String(d.getDate()));
+    setMonth(String(d.getMonth() + 1));
+    setYear(String(d.getFullYear()));
+  };
+  const setEndFrom = (h: number, m: number, mins: number) => {
+    const t = h * 60 + m + mins;
+    setEndHour(pad2(String(Math.floor(t / 60) % 24)));
+    setEndMin(pad2(String(t % 60)));
+  };
+  const duration =
+    isValidInt(startHour, 0, 23) && isValidInt(startMin, 0, 59) && isValidInt(endHour, 0, 23) && isValidInt(endMin, 0, 59)
+      ? Number(endHour) * 60 + Number(endMin) - (Number(startHour) * 60 + Number(startMin))
+      : null;
+  const pickSlot = (h: number, m: number) => {
+    setStartHour(pad2(String(h)));
+    setStartMin(pad2(String(m)));
+    setEndFrom(h, m, duration && duration > 0 ? duration : 30);
+  };
+  const pickDuration = (mins: number) => {
+    if (isValidInt(startHour, 0, 23) && isValidInt(startMin, 0, 59)) setEndFrom(Number(startHour), Number(startMin), mins);
+  };
 
-      {/* ── Date ── */}
-      <View style={s.card}>
-        <SectionHeader icon="calendar-outline" label="DATE" required />
-        <DateRow
-          day={day} month={month} year={year}
-          setDay={setDay} setMonth={setMonth} setYear={setYear}
-        />
-      </View>
+  const dateOk = isValidInt(day, 1, 31) && isValidInt(month, 1, 12) && year.length === 4;
+  const dateLabel = dateOk
+    ? new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString(undefined, {
+        weekday: "short", month: "short", day: "numeric",
+      })
+    : "Pick a date";
+  const timeLabel =
+    duration !== null ? `${pad2(startHour)}:${pad2(startMin)} – ${pad2(endHour)}:${pad2(endMin)}` : "Pick a time";
 
-      {/* ── Time ── */}
-      <View style={s.card}>
-        <SectionHeader icon="time-outline" label="TIME" required />
-        <View style={s.timeGrid}>
-          <View style={s.timeCol}>
-            <Text style={s.timeLabel}>START TIME</Text>
-            <TimeRow
-              hour={startHour} minute={startMin} label="Start"
-              setHour={setStartHour} setMinute={setStartMin}
-            />
+  const details = (
+    <>
+      <Appear index={0}>
+        <View style={s.card}>
+          <SectionHeader icon="pencil-outline" label="MEETING TITLE" required />
+          <TextInput
+            style={s.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="e.g. Product sync with team"
+            placeholderTextColor="#4b5563"
+            returnKeyType="next"
+          />
+        </View>
+      </Appear>
+
+      <Appear index={1}>
+        <View style={s.card}>
+          <SectionHeader icon="calendar-outline" label="DATE" required />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={qp.row}>
+            {NEXT_DAYS.map((d, i) => (
+              <Chip
+                key={i}
+                sub={i === 0 ? "TODAY" : i === 1 ? "TMRW" : d.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()}
+                label={d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                active={isDay(d)}
+                onPress={() => pickDay(d)}
+              />
+            ))}
+          </ScrollView>
+          <Text style={qp.or}>OR ENTER A DATE</Text>
+          <DateRow
+            day={day} month={month} year={year}
+            setDay={setDay} setMonth={setMonth} setYear={setYear}
+          />
+        </View>
+      </Appear>
+
+      <Appear index={2}>
+        <View style={s.card}>
+          <SectionHeader icon="time-outline" label="TIME" required />
+          <Text style={qp.label}>START</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={qp.row}>
+            {SLOTS.map(({ h, m }) => (
+              <Chip
+                key={`${h}:${m}`}
+                label={`${pad2(String(h))}:${pad2(String(m))}`}
+                active={Number(startHour) === h && Number(startMin) === m && startHour !== ""}
+                onPress={() => pickSlot(h, m)}
+              />
+            ))}
+          </ScrollView>
+          <Text style={[qp.label, { marginTop: 14 }]}>DURATION</Text>
+          <View style={[qp.row, { flexDirection: "row", flexWrap: "wrap" }]}>
+            {DURATIONS.map((mins) => (
+              <Chip
+                key={mins}
+                label={mins < 60 ? `${mins} min` : `${mins / 60} hr`.replace("1.5 hr", "1½ hr")}
+                active={duration === mins}
+                onPress={() => pickDuration(mins)}
+              />
+            ))}
           </View>
-          <View style={s.timeDivider} />
-          <View style={s.timeCol}>
-            <Text style={s.timeLabel}>END TIME</Text>
-            <TimeRow
-              hour={endHour} minute={endMin} label="End"
-              setHour={setEndHour} setMinute={setEndMin}
-            />
+
+          <Text style={qp.or}>OR SET EXACT TIMES (24H)</Text>
+          <View style={s.timeGrid}>
+            <View style={s.timeCol}>
+              <Text style={s.timeLabel}>START TIME</Text>
+              <TimeRow
+                hour={startHour} minute={startMin} label="Start"
+                setHour={setStartHour} setMinute={setStartMin}
+              />
+            </View>
+            <View style={s.timeDivider} />
+            <View style={s.timeCol}>
+              <Text style={s.timeLabel}>END TIME</Text>
+              <TimeRow
+                hour={endHour} minute={endMin} label="End"
+                setHour={setEndHour} setMinute={setEndMin}
+              />
+            </View>
           </View>
         </View>
-      </View>
+      </Appear>
+    </>
+  );
 
-      {/* ── Attendees ── */}
-      <View style={s.card}>
-        <SectionHeader icon="people-outline" label="ATTENDEES" required />
-        <Text style={s.hint}>
-          Select from your saved contacts. Only contacts with an email can be added.
-        </Text>
-        <ContactPicker
-          selected={selectedContacts}
-          onToggle={toggleContact}
-          contacts={contacts}
-        />
-      </View>
+  const people = (
+    <>
+      <Appear index={3}>
+        <View style={s.card}>
+          <SectionHeader icon="people-outline" label="ATTENDEES" required />
+          <Text style={s.hint}>
+            Select from your saved contacts. Only contacts with an email can be added.
+          </Text>
+          <ContactPicker
+            selected={selectedContacts}
+            onToggle={toggleContact}
+            contacts={contacts}
+          />
+        </View>
+      </Appear>
 
-      {/* ── Agenda ── */}
-      <View style={s.card}>
-        <SectionHeader icon="document-text-outline" label="MEETING AGENDA" />
-        <Text style={s.hint}>
-          What should the AI ask or achieve during the auto-call?
-        </Text>
-        <TextInput
-          style={[s.input, s.textArea]}
-          value={agenda}
-          onChangeText={setAgenda}
-          placeholder="e.g. Confirm project deadline, check blockers, get status update"
-          placeholderTextColor="#4b5563"
-          multiline
-          returnKeyType="done"
-        />
-      </View>
+      <Appear index={4}>
+        <View style={s.card}>
+          <SectionHeader icon="document-text-outline" label="MEETING AGENDA" />
+          <Text style={s.hint}>
+            What should the AI ask or achieve during the auto-call?
+          </Text>
+          <TextInput
+            style={[s.input, s.textArea]}
+            value={agenda}
+            onChangeText={setAgenda}
+            placeholder="e.g. Confirm project deadline, check blockers, get status update"
+            placeholderTextColor="#4b5563"
+            multiline
+          />
+        </View>
+      </Appear>
 
-      <ErrorMessage message={error} />
+      <Appear index={5}>
+        <View style={s.summary}>
+          <Text style={s.summaryKicker}>SUMMARY</Text>
+          <Text style={s.summaryTitle} numberOfLines={2}>{title.trim() || "Untitled meeting"}</Text>
+          {[
+            { icon: "calendar-outline" as const, text: dateLabel, ok: dateOk },
+            { icon: "time-outline" as const, text: duration && duration > 0 ? `${timeLabel} · ${duration} min` : timeLabel, ok: !!duration && duration > 0 },
+            {
+              icon: "people-outline" as const,
+              text: selectedContacts.length ? selectedContacts.map((c) => c.name).join(", ") : "No attendees yet",
+              ok: selectedContacts.length > 0,
+            },
+          ].map((r) => (
+            <View key={r.icon} style={s.summaryRow}>
+              <Ionicons name={r.icon} size={15} color={r.ok ? "#FBBF24" : "#4b5563"} />
+              <Text style={[s.summaryText, !r.ok && { color: "#6b7280" }]} numberOfLines={1}>{r.text}</Text>
+            </View>
+          ))}
 
-      <Pressable
-        style={[s.createBtn, createMeeting.isPending ? s.createBtnDisabled : null]}
-        onPress={handleCreate}
-        disabled={createMeeting.isPending}
+          <ErrorMessage message={error} />
+
+          <PrimaryButton
+            label="Create meeting"
+            icon="checkmark-circle"
+            onPress={handleCreate}
+            loading={createMeeting.isPending}
+            style={{ marginTop: 14 }}
+          />
+          <Text style={s.summaryNote}>xTanBot will call attendees at the start time.</Text>
+        </View>
+      </Appear>
+    </>
+  );
+
+  return (
+    <Screen>
+      <ScrollView
+        style={s.screen}
+        contentContainerStyle={[s.content, wide && s.contentWide]}
+        keyboardShouldPersistTaps="handled"
       >
-        <Ionicons
-          name="checkmark-circle-outline"
-          size={20}
-          color="#000"
-          style={{ marginRight: 8 }}
-        />
-        <Text style={s.createBtnText}>
-          {createMeeting.isPending ? "CREATING…" : "CREATE MEETING"}
-        </Text>
-      </Pressable>
+        <Pressable onPress={back} style={s.backBtn} hitSlop={8}>
+          <Ionicons name="arrow-back" size={16} color="#FBBF24" />
+          <Text style={s.backText}>Meetings</Text>
+        </Pressable>
 
-      <View style={s.bottomPad} />
-    </ScrollView>
+        <View style={s.hero}>
+          <GradientIcon icon="calendar" gradient="indigo" size={wide ? 56 : 48} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.pageTitle}>New meeting</Text>
+            <Text style={s.pageSub}>Pick a slot, add people, and xTanBot handles the reminder calls.</Text>
+          </View>
+        </View>
+
+        {wide ? (
+          <View style={s.columns}>
+            <View style={s.colMain}>{details}</View>
+            <View style={s.colSide}>{people}</View>
+          </View>
+        ) : (
+          <>
+            {details}
+            {people}
+          </>
+        )}
+      </ScrollView>
+    </Screen>
   );
 }
 
 const s = StyleSheet.create({
   screen:  { flex: 1, backgroundColor: "#09090b" },
-  content: { paddingHorizontal: 20, paddingTop: 52, paddingBottom: 32 },
+  content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 72, width: "100%", maxWidth: 640, alignSelf: "center" },
+  contentWide: { maxWidth: 1120, paddingHorizontal: 32, paddingTop: 28 },
 
-  backBtn:  { alignSelf: "flex-start", marginBottom: 4 },
-  backText: { color: "#FBBF24", fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
+  backBtn:  { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 16 },
+  backText: { color: "#FBBF24", fontWeight: "700", fontSize: 14 },
 
-  pageTitle: { fontSize: 30, fontWeight: "900", color: "#fff", letterSpacing: -0.5, marginTop: 8 },
-  pageSub:   { fontSize: 13, color: "#6b7280", marginTop: 4, marginBottom: 24 },
+  hero: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24 },
+  pageTitle: { fontSize: 30, fontWeight: "800", color: "#fff", letterSpacing: -0.6 },
+  pageSub:   { fontSize: 14, color: "#9ca3af", marginTop: 4, lineHeight: 20 },
+
+  columns: { flexDirection: "row", gap: 20, alignItems: "flex-start" },
+  colMain: { flex: 1.35, minWidth: 0 },
+  // Summary + create stay in view while scrolling the form (web only — native has no sticky).
+  colSide: { flex: 1, minWidth: 0, ...(Platform.OS === "web" ? { position: "sticky" as "relative", top: 16 } : {}) },
+
+  summary: {
+    backgroundColor: "#0f172a",
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.25)",
+  },
+  summaryKicker: { fontSize: 10, fontWeight: "900", color: "#FBBF24", letterSpacing: 2 },
+  summaryTitle:  { fontSize: 20, fontWeight: "800", color: "#fff", marginTop: 6, marginBottom: 12 },
+  summaryRow:    { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 5 },
+  summaryText:   { flex: 1, color: "#e5e7eb", fontSize: 14, fontWeight: "600" },
+  summaryNote:   { color: "#6b7280", fontSize: 12, textAlign: "center", marginTop: 10 },
 
   card: {
     backgroundColor: "#111827",
@@ -733,8 +913,8 @@ const s = StyleSheet.create({
   hint: { fontSize: 12, color: "#4b5563", marginBottom: 12, lineHeight: 18 },
 
   input: {
-    backgroundColor: "#1a1a2e",
-    borderWidth: 2,
+    backgroundColor: "#111827",
+    borderWidth: 1,
     borderColor: "#374151",
     borderRadius: 10,
     paddingHorizontal: 14,
@@ -754,26 +934,8 @@ const s = StyleSheet.create({
     marginTop: 22,
   },
   timeLabel: {
-    fontSize: 10, fontWeight: "900", color: "#6b7280",
+    fontSize: 10, fontWeight: "800", color: "#6b7280",
     letterSpacing: 1.5, textAlign: "center", marginBottom: 8,
   },
 
-  createBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FBBF24",
-    borderRadius: 14,
-    paddingVertical: 17,
-    marginTop: 8,
-    shadowColor: "#FBBF24",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  createBtnDisabled: { opacity: 0.5 },
-  createBtnText: { color: "#000", fontWeight: "900", fontSize: 16, letterSpacing: 1.5 },
-
-  bottomPad: { height: 40 },
 });

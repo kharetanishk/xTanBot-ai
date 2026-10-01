@@ -1,13 +1,7 @@
 import { useState } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  Alert,
-  StyleSheet,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import * as Linking from "expo-linking";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   useContact,
@@ -17,7 +11,10 @@ import {
 import { parseError } from "../../../src/utils/error.utils";
 import { formatDate } from "../../../src/utils/date.utils";
 import ContactAvatar from "../../../src/components/contacts/ContactAvatar";
-import Button from "../../../src/components/common/Button";
+import {
+  Screen, Appear, IconTile, PrimaryButton, Skeleton, EmptyState, type IconName,
+} from "../../../src/components/ui";
+import { colors, radius } from "../../../src/theme";
 import Input from "../../../src/components/common/Input";
 import ErrorMessage from "../../../src/components/common/ErrorMessage";
 
@@ -35,6 +32,8 @@ export default function ContactDetailScreen() {
   const [editCompany, setEditCompany] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const wide = useWindowDimensions().width >= 760;
 
   function startEditing() {
     if (!contact) return;
@@ -70,295 +69,209 @@ export default function ContactDetailScreen() {
     );
   }
 
+  // Two-tap delete: Alert.alert is a no-op on web, so confirm inline instead.
   function handleDelete() {
-    Alert.alert(
-      "Delete Contact",
-      "Are you sure? This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            deleteContact.mutate(undefined, {
-              onSuccess: () => router.back(),
-              onError: (err) => setError(parseError(err)),
-            });
-          },
-        },
-      ],
-    );
+    if (!confirmDelete) return setConfirmDelete(true);
+    deleteContact.mutate(undefined, {
+      onSuccess: () => back(),
+      onError: (err) => {
+        setConfirmDelete(false);
+        setError(parseError(err));
+      },
+    });
   }
+
+  const back = () => (router.canGoBack() ? router.back() : router.replace("/(app)/dashboard/contacts"));
 
   if (isLoading) {
     return (
-      <View style={styles.screen}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>← BACK</Text>
-        </Pressable>
-        <View style={styles.skeletonCard} />
-        <ActivityIndicator
-          color="#FBBF24"
-          size="large"
-          style={{ marginTop: 24 }}
-        />
-      </View>
+      <Screen>
+        <View style={[styles.content, { paddingTop: 12 }]}>
+          <Skeleton height={140} />
+          <Skeleton height={220} />
+        </View>
+      </Screen>
     );
   }
 
   if (!contact) {
     return (
-      <View style={[styles.screen, styles.centered]}>
-        <Text style={styles.notFound}>Contact not found</Text>
-      </View>
+      <Screen>
+        <EmptyState icon="person-outline" title="Contact not found" subtitle="It may have been deleted." />
+      </Screen>
     );
   }
 
+  const actions: { icon: IconName; label: string; onPress?: () => void }[] = [
+    { icon: "call", label: "Call", onPress: contact.phone ? () => void Linking.openURL(`tel:${contact.phone}`) : undefined },
+    { icon: "mail", label: "Email", onPress: contact.email ? () => void Linking.openURL(`mailto:${contact.email}`) : undefined },
+    { icon: "calendar", label: "Meeting", onPress: () => router.push("/meeting/new") },
+    { icon: "create", label: "Edit", onPress: startEditing },
+  ];
+
+  const rows: { icon: IconName; label: string; value?: string }[] = [
+    { icon: "call-outline", label: "Phone", value: contact.phone },
+    { icon: "mail-outline", label: "Email", value: contact.email },
+    { icon: "business-outline", label: "Company", value: contact.company },
+    { icon: "document-text-outline", label: "Notes", value: contact.notes },
+    { icon: "time-outline", label: "Added", value: formatDate(contact.createdAt) },
+  ];
+
+  const field = (
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    extra: Partial<React.ComponentProps<typeof Input>> = {},
+  ) => (
+    <View style={wide ? styles.half : undefined}>
+      <Input label={label} value={value} onChangeText={set} {...extra} />
+    </View>
+  );
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Pressable onPress={() => router.back()} style={styles.backButton}>
-        <Text style={styles.backText}>← BACK</Text>
-      </Pressable>
-
-      <View style={styles.headerRow}>
-        <ContactAvatar name={contact.name} size={56} />
-        <View style={styles.headerText}>
-          <Text style={styles.title}>{contact.name}</Text>
-          {contact.company ? (
-            <Text style={styles.subtitle}>{contact.company}</Text>
-          ) : null}
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        {contact.phone ? (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>PHONE</Text>
-            <Text style={styles.infoValue}>{contact.phone}</Text>
-          </View>
-        ) : null}
-
-        {contact.email ? (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>EMAIL</Text>
-            <Text style={styles.infoValue}>{contact.email}</Text>
-          </View>
-        ) : null}
-
-        {contact.company ? (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>COMPANY</Text>
-            <Text style={styles.infoValue}>{contact.company}</Text>
-          </View>
-        ) : null}
-
-        {contact.notes ? (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>NOTES</Text>
-            <Text style={styles.infoValue}>{contact.notes}</Text>
-          </View>
-        ) : null}
-
-        <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-          <Text style={styles.infoLabel}>ADDED</Text>
-          <Text style={styles.infoValue}>{formatDate(contact.createdAt)}</Text>
-        </View>
-      </View>
-
-      {isEditing ? (
-        <View style={[styles.card, { marginTop: 16 }]}>
-          <Text style={styles.cardTitle}>EDIT CONTACT</Text>
-
-          <Input
-            label="FULL NAME *"
-            value={editName}
-            onChangeText={setEditName}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
-          <Input
-            label="PHONE NUMBER"
-            value={editPhone}
-            onChangeText={setEditPhone}
-            keyboardType="phone-pad"
-            returnKeyType="next"
-          />
-          <Input
-            label="EMAIL"
-            value={editEmail}
-            onChangeText={setEditEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            returnKeyType="next"
-          />
-          <Input
-            label="COMPANY"
-            value={editCompany}
-            onChangeText={setEditCompany}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
-          <Input
-            label="NOTES"
-            value={editNotes}
-            onChangeText={setEditNotes}
-            returnKeyType="done"
-            onSubmitEditing={handleSave}
-          />
-
-          <ErrorMessage message={error} />
-
-          <Button
-            title="SAVE CHANGES"
-            onPress={handleSave}
-            loading={updateContact.isPending}
-          />
-          <View style={{ height: 8 }} />
-          <Button
-            title="CANCEL"
-            variant="ghost"
-            onPress={() => setIsEditing(false)}
-          />
-        </View>
-      ) : (
-        <View style={{ marginTop: 16 }}>
-          <Button
-            title="EDIT CONTACT"
-            variant="secondary"
-            onPress={startEditing}
-          />
-        </View>
-      )}
-
-      <View style={{ marginTop: 8 }}>
-        <ErrorMessage message={!isEditing ? error : null} />
-        <Pressable
-          style={styles.deleteButton}
-          onPress={handleDelete}
-          disabled={deleteContact.isPending}
-        >
-          {deleteContact.isPending ? (
-            <ActivityIndicator color="#ffffff" size="small" />
-          ) : (
-            <Text style={styles.deleteText}>DELETE CONTACT</Text>
-          )}
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Pressable onPress={back} style={styles.backBtn} hitSlop={8}>
+          <Ionicons name="arrow-back" size={16} color={colors.accent} />
+          <Text style={styles.backText}>Contacts</Text>
         </Pressable>
-      </View>
-    </ScrollView>
+
+        {/* Hero */}
+        <Appear index={0}>
+          <View style={[styles.hero, wide && styles.heroWide]}>
+            <View style={styles.heroGlow} />
+            <ContactAvatar name={contact.name} size={wide ? 88 : 76} />
+            <View style={[styles.heroText, wide && { alignItems: "flex-start" }]}>
+              <Text style={[styles.title, wide && { textAlign: "left" }]}>{contact.name}</Text>
+              {contact.company ? <Text style={styles.subtitle}>{contact.company}</Text> : null}
+            </View>
+            <View style={styles.actions}>
+              {actions.map((a) => (
+                <Pressable
+                  key={a.label}
+                  onPress={a.onPress}
+                  disabled={!a.onPress}
+                  style={({ pressed }) => [styles.action, !a.onPress && { opacity: 0.35 }, pressed && styles.pressed]}
+                >
+                  <View style={styles.actionIcon}>
+                    <Ionicons name={a.icon} size={20} color={colors.accent} />
+                  </View>
+                  <Text style={styles.actionText}>{a.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </Appear>
+
+        {isEditing ? (
+          <Appear index={1}>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Edit contact</Text>
+              <View style={wide ? styles.formGrid : undefined}>
+                {field("FULL NAME *", editName, setEditName, { autoCapitalize: "words" })}
+                {field("PHONE NUMBER", editPhone, setEditPhone, { keyboardType: "phone-pad" })}
+                {field("EMAIL", editEmail, setEditEmail, { keyboardType: "email-address", autoCapitalize: "none" })}
+                {field("COMPANY", editCompany, setEditCompany, { autoCapitalize: "words" })}
+              </View>
+              <Input label="NOTES" value={editNotes} onChangeText={setEditNotes} onSubmitEditing={handleSave} />
+              <ErrorMessage message={error} />
+              <View style={styles.formActions}>
+                <PrimaryButton label="Cancel" tone="neutral" onPress={() => setIsEditing(false)} style={{ flex: 1 }} />
+                <PrimaryButton label="Save changes" icon="checkmark" onPress={handleSave} loading={updateContact.isPending} style={{ flex: 1.4 }} />
+              </View>
+            </View>
+          </Appear>
+        ) : (
+          <Appear index={1}>
+            <View style={styles.card}>
+              {rows.map((r, i) => (
+                <View key={r.label} style={[styles.row, i === rows.length - 1 && { borderBottomWidth: 0 }]}>
+                  <IconTile icon={r.icon} tone={r.value ? "accent" : "neutral"} size={36} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowLabel}>{r.label}</Text>
+                    <Text style={[styles.rowValue, !r.value && styles.rowEmpty]} selectable>
+                      {r.value || "Not added"}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </Appear>
+        )}
+
+        <Appear index={2}>
+          {!isEditing ? <ErrorMessage message={error} /> : null}
+          <View style={styles.danger}>
+            <Text style={styles.dangerText}>
+              {confirmDelete ? "Delete this contact for good? This can't be undone." : "Remove this contact from xTanBot."}
+            </Text>
+            <View style={styles.dangerActions}>
+              {confirmDelete ? (
+                <PrimaryButton label="Keep" tone="neutral" onPress={() => setConfirmDelete(false)} />
+              ) : null}
+              <PrimaryButton
+                label={confirmDelete ? "Yes, delete" : "Delete"}
+                icon="trash-outline"
+                tone="danger"
+                onPress={handleDelete}
+                loading={deleteContact.isPending}
+              />
+            </View>
+          </View>
+        </Appear>
+      </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#0a0a0a",
-    paddingTop: 48,
-    paddingHorizontal: 24,
-  },
-  content: {
-    paddingBottom: 48,
-  },
-  centered: {
-    justifyContent: "center",
+  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 56, width: "100%", maxWidth: 820, alignSelf: "center", gap: 14 },
+  backBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingVertical: 6 },
+  backText: { color: colors.accent, fontWeight: "700", fontSize: 14 },
+
+  hero: {
     alignItems: "center",
-  },
-  notFound: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  backButton: {
-    alignSelf: "flex-start",
-  },
-  backText: {
-    color: "#FBBF24",
-    fontWeight: "900",
-    fontSize: 14,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  headerText: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#ffffff",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#888",
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  card: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    borderRadius: 0,
+    gap: 12,
     padding: 24,
-    shadowOffset: { width: 6, height: 6 },
-    shadowColor: "#000000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 6,
+    borderRadius: 28,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
   },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#000000",
-    letterSpacing: 2,
-    marginBottom: 24,
+  heroWide: { flexDirection: "row", flexWrap: "wrap", gap: 20, padding: 28 },
+  heroGlow: {
+    position: "absolute", width: 300, height: 300, borderRadius: 150, top: -170, right: -60,
+    backgroundColor: "rgba(251,191,36,0.09)",
   },
-  infoRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: "#f0f0f0",
+  heroText: { flex: 1, minWidth: 180, alignItems: "center" },
+  title: { fontSize: 28, fontWeight: "800", color: colors.text, letterSpacing: -0.5, textAlign: "center" },
+  subtitle: { fontSize: 15, color: colors.textMuted, fontWeight: "600", marginTop: 4 },
+
+  actions: { flexDirection: "row", gap: 10 },
+  action: { alignItems: "center", gap: 6, width: 64 },
+  actionIcon: {
+    width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: "rgba(251,191,36,0.25)",
   },
-  infoLabel: {
-    fontSize: 11,
-    color: "#999",
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginBottom: 2,
+  actionText: { color: colors.textMuted, fontSize: 12, fontWeight: "700" },
+
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 18 },
+  cardTitle: { fontSize: 18, fontWeight: "800", color: colors.text, marginBottom: 16 },
+  row: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowLabel: { fontSize: 12, color: colors.textSubtle, fontWeight: "700" },
+  rowValue: { fontSize: 16, fontWeight: "600", color: colors.text, marginTop: 2 },
+  rowEmpty: { color: colors.textSubtle, fontWeight: "500" },
+
+  formGrid: { flexDirection: "row", flexWrap: "wrap", columnGap: 16 },
+  half: { width: "48%", flexGrow: 1 },
+  formActions: { flexDirection: "row", gap: 12, marginTop: 8 },
+
+  danger: {
+    flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12,
+    padding: 16, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(239,68,68,0.25)", backgroundColor: "rgba(239,68,68,0.05)",
   },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#000",
-  },
-  skeletonCard: {
-    backgroundColor: "#1a1a1a",
-    height: 200,
-    borderWidth: 3,
-    borderColor: "#333",
-    borderRadius: 0,
-    marginTop: 24,
-  },
-  deleteButton: {
-    backgroundColor: "#EF4444",
-    borderWidth: 3,
-    borderColor: "#000",
-    borderRadius: 0,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOffset: { width: 3, height: 3 },
-    shadowColor: "#000",
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  deleteText: {
-    color: "#ffffff",
-    fontWeight: "900",
-    fontSize: 16,
-  },
+  dangerText: { color: colors.textMuted, fontSize: 14, flex: 1, minWidth: 200 },
+  dangerActions: { flexDirection: "row", gap: 10 },
+  pressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
 });
