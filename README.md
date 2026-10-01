@@ -1,12 +1,12 @@
 # xTanBot.ai
 
-> Production-grade AI voice assistant platform — scheduling, phone calls, and natural voice powered by Claude.
+> Production-grade AI voice assistant platform — scheduling, phone calls, and natural voice powered by any LLM via OpenRouter.
 
 ---
 
 ## What is xTanBot?
 
-xTanBot is an AI voice assistant that answers your phone calls, schedules meetings, manages contacts, and handles tasks — all through natural conversation. Built on Anthropic's Claude, Twilio, Deepgram, and ElevenLabs.
+xTanBot is an AI voice assistant that answers your phone calls, schedules meetings, manages contacts, and handles tasks — all through natural conversation. Built on OpenRouter (any model), Twilio, Deepgram, ElevenLabs, and LiveKit.
 
 ---
 
@@ -40,7 +40,7 @@ xTanBot is an AI voice assistant that answers your phone calls, schedules meetin
                                              ▼
                                   ┌─────────────────────┐
                                   │  @xtanbot/ai-core   │
-                                  │  Claude (Anthropic) │
+                                  │ LLM via OpenRouter  │
                                   │  Tool Router        │
                                   │  schedule_meeting   │
                                   │  make_call          │
@@ -68,7 +68,7 @@ xtanbot-ai/
 │   ├── worker/       — BullMQ job workers
 │   └── mobile/       — React Native + Expo (Day 4)
 ├── packages/
-│   ├── ai-core/      — Claude client, tool router, runAgent()
+│   ├── ai-core/      — OpenRouter client, tool router, runAgent()
 │   ├── config/       — Zod-validated environment singleton
 │   ├── db/           — Prisma client + repositories
 │   ├── events/       — Domain event schemas + Redis pub/sub
@@ -88,7 +88,7 @@ xtanbot-ai/
 
 | Layer         | Technology                           |
 | ------------- | ------------------------------------ |
-| AI            | Anthropic Claude (claude-sonnet-4-5) |
+| AI            | OpenRouter (default anthropic/claude-sonnet-5.5) |
 | Voice         | Twilio Media Streams                 |
 | STT           | Deepgram Nova-2                      |
 | TTS           | ElevenLabs Turbo v2.5                |
@@ -139,9 +139,10 @@ DATABASE_URL=postgresql:xxx
 # Redis
 REDIS_URL=redis:xxx
 
-# Anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-5
+# OpenRouter (any model)
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=anthropic/claude-sonnet-5.5
+OPENROUTER_FAST_MODEL=anthropic/claude-haiku-4.5
 
 # ElevenLabs
 ELEVENLABS_API_KEY=...
@@ -246,7 +247,7 @@ pnpm dev
 
 ## AI Tools
 
-Claude has access to these tools during voice calls:
+The agent has access to these tools during voice calls:
 
 | Tool               | Description                         |
 | ------------------ | ----------------------------------- |
@@ -305,8 +306,9 @@ pnpm docker:down
 | `API_HOST`                     | No       | `0.0.0.0`           | API server host                      |
 | `DATABASE_URL`                 | Yes      | —                   | PostgreSQL connection URL            |
 | `REDIS_URL`                    | Yes      | —                   | Redis connection URL                 |
-| `ANTHROPIC_API_KEY`            | Yes      | —                   | Anthropic API key                    |
-| `ANTHROPIC_MODEL`              | No       | `claude-sonnet-4-5` | Claude model                         |
+| `OPENROUTER_API_KEY`           | Yes      | —                   | OpenRouter API key                   |
+| `OPENROUTER_MODEL`             | No       | `anthropic/claude-sonnet-5.5` | Text chat model          |
+| `OPENROUTER_FAST_MODEL`        | No       | `anthropic/claude-haiku-4.5`  | Calls, voice, quick turns |
 | `ELEVENLABS_API_KEY`           | Yes      | —                   | ElevenLabs API key                   |
 | `ELEVENLABS_VOICE_ID`          | Yes      | —                   | ElevenLabs voice ID                  |
 | `ELEVENLABS_MODEL_ID`          | No       | `eleven_turbo_v2_5` | ElevenLabs model                     |

@@ -16,14 +16,24 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "ai.xtanbot.app"
+      "bundleIdentifier": "ai.xtanbot.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "xTanBot uses the microphone for voice chat with your assistant.",
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "",
         "backgroundColor": "#0a0a0a"
       },
-      "package": "ai.xtanbot.app"
+      "package": "ai.xtanbot.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -33,7 +43,9 @@
         {
           "color": "#FBBF24"
         }
-      ]
+      ],
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc"
     ],
     "scheme": "xtanbot",
     "experiments": {
@@ -45,6 +57,9 @@
         "projectId": "edeae96b-89f7-40f2-967b-c4f8486b6aea"
       }
     },
-    "owner": "tanishk1601s-organization"
+    "owner": "tanishk1601s-organization",
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    }
   }
 }
