@@ -1,0 +1,50 @@
+{
+  "hero": {
+    "say": "Hi, I'm xTan! Scroll down, and I'll show you around.",
+    "show": "Hi, I'm xTan! Scroll down — I'll show you around 👇"
+  },
+  "marquee": {
+    "say": "Phone calls, meetings, wake-up calls, web search, WhatsApp... I handle it all.",
+    "show": "Calls, meetings, wake-ups, web search, WhatsApp… I handle it all ✨"
+  },
+  "ch-calls": {
+    "say": "Need a dentist appointment? I'll call the clinic and book it for you.",
+    "show": "Need a dentist appointment? I'll call the clinic and book it for you."
+  },
+  "ch-meetings": {
+    "say": "I'll set up your meeting, then call everyone to make sure they show up.",
+    "show": "I'll set up your meeting, then call everyone to make sure they show up."
+  },
+  "ch-search": {
+    "say": "Ask me anything. I'll search the web and bring back exactly what you need.",
+    "show": "Ask me anything — I'll search the web and bring back exactly what you need."
+  },
+  "ch-voice": {
+    "say": "And you don't even have to type. Just talk to me, like you'd talk to a friend.",
+    "show": "And you don't even have to type. Just talk to me, like you'd talk to a friend."
+  },
+  "ch-alarms": {
+    "say": "Can't wake up? I'll phone you at seven every morning, until you're up.",
+    "show": "Can't wake up? I'll phone you at seven every morning until you're up ☀️"
+  },
+  "how": {
+    "say": "Here's how it works. You ask, I take over, and you get the result.",
+    "show": "Here's how it works: you ask, I take over, you get the result."
+  },
+  "callees": {
+    "say": "Who can I call for you? Your dentist, that new café, your salon, your whole team... even you, at seven A.M.",
+    "show": "Who can I call? Your dentist, a café, your salon, your team… even you, at 7 AM 😄"
+  },
+  "stats": {
+    "say": "I'm on duty twenty-four seven, I use more than ten tools, and getting started is completely free.",
+    "show": "On duty 24/7, 10+ tools, and getting started is free."
+  },
+  "faq": {
+    "say": "Got questions? These are the ones people ask me the most.",
+    "show": "Got questions? These are the ones people ask me most."
+  },
+  "final": {
+    "say": "Come on, let's do this together! I'm ready when you are.",
+    "show": "Come on, let's do this together! I'm ready when you are 💛"
+  }
+}
