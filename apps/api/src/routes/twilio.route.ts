@@ -1,3 +1,4 @@
+import { callRepository } from "@xtanbot/db";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import { createLogger } from "@xtanbot/logger";
@@ -13,21 +14,27 @@ import { callService } from "../services/call.service";
 
 const logger = createLogger("TwilioRoute");
 
-function guardTwilioSignature(
+async function guardTwilioSignature(
   request: FastifyRequest,
   reply: FastifyReply,
-): boolean {
-  if (config.NODE_ENV === "development") {
+): Promise<boolean> {
+  // Skip only when the API isn't reachable from the internet (local dev without a tunnel).
+  if (config.NODE_ENV === "development" && /localhost|127\.0\.0\.1/.test(config.API_URL)) {
     return true;
   }
 
   const signature = request.headers["x-twilio-signature"];
 
   if (!signature || typeof signature !== "string" || signature.trim() === "") {
-    logger.warn(
-      { ip: request.ip },
-      "Missing Twilio signature — request rejected",
-    );
+    // Twilio's trial-account webhooks arrive without X-Twilio-Signature. Accept those only
+    // when they name our account and a call we actually placed (checked by the caller).
+    const body = (request.body ?? {}) as Record<string, string>;
+    if (body.AccountSid === config.TWILIO_ACCOUNT_SID && typeof body.CallSid === "string") {
+      const known = await callRepository.findByCallSid(body.CallSid);
+      if (known) return true;
+      logger.warn({ callSid: body.CallSid }, "Unsigned Twilio request for unknown call — rejected");
+    }
+    logger.warn({ ip: request.ip }, "Missing Twilio signature — request rejected");
     return false;
   }
 
@@ -58,7 +65,7 @@ export const twilioRoutes = fp(async function twilioRoutes(
     { config: { rawBody: true, rateLimit: { max: 300 } } },
     async (request, reply) => {
       try {
-        if (!guardTwilioSignature(request, reply)) {
+        if (!(await guardTwilioSignature(request, reply))) {
           return reply.status(403).send({ error: "Forbidden" });
         }
 
@@ -155,7 +162,7 @@ export const twilioRoutes = fp(async function twilioRoutes(
     "/twilio/status",
     { config: { rateLimit: { max: 300 } } },
     async (request, reply) => {
-      if (!guardTwilioSignature(request, reply)) {
+      if (!(await guardTwilioSignature(request, reply))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 

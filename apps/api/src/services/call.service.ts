@@ -30,8 +30,9 @@ export const callService = {
       to: data.toNumber,
       from: config.TWILIO_PHONE_NUMBER,
       url: `${data.streamBaseUrl}/twilio/voice`,
+      // Only to/from/url/statusCallback: Twilio trial accounts reject extra parameters
+      // (statusCallbackMethod, twiml, …) with "Invalid or disallowed parameters". POST is the default.
       statusCallback: `${data.streamBaseUrl}/twilio/status`,
-      statusCallbackMethod: "POST",
     });
 
     const dbCall = await callRepository.create({

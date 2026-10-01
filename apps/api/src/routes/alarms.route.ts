@@ -16,6 +16,15 @@ const CreateAlarmSchema = z.object({
 });
 
 export async function alarmsRoutes(app: FastifyInstance): Promise<void> {
+  // Twilio fetches the alarm call's TwiML here (parked in Redis by the alarm worker).
+  app.post("/alarm/twiml/:alarmId", async (request, reply) => {
+    const { alarmId } = request.params as { alarmId: string };
+    const twiml =
+      (await redisConnection.get(`alarm-twiml:${alarmId}`)) ??
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Good morning! This is xTanBot. Time to wake up.</Say><Hangup/></Response>`;
+    return reply.type("text/xml").send(twiml);
+  });
+
   app.get("/alarms", { preHandler: requireAuth }, async (request, reply) => {
     const { userId } = request.user;
     const alarms = await prisma.alarm.findMany({

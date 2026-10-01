@@ -167,10 +167,8 @@ export function createMeetingCallWorker(): Worker {
               to: phone,
               from: config.TWILIO_PHONE_NUMBER,
               url: `${config.API_URL}/twilio/voice?context=${context}`,
+              // Trial-safe parameters only (trial accounts reject statusCallbackMethod/machineDetection).
               statusCallback: `${config.API_URL}/twilio/status`,
-              statusCallbackMethod: "POST",
-              machineDetection: "Enable",
-              machineDetectionTimeout: 30,
             });
 
             await prisma.call.create({
@@ -249,11 +247,10 @@ export function createMeetingCallWorker(): Worker {
           ? `\n\nMEETING AGENDA (answer each item in agendaAnswers):\n${jobAgenda}`
           : "";
 
-        const { default: Anthropic } = await import("@anthropic-ai/sdk");
-        const anthropic = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
+        const { llmClient } = await import("@xtanbot/ai-core");
 
-        const analysis = await anthropic.messages.create({
-          model: config.ANTHROPIC_HAIKU_MODEL,
+        const analysis = await llmClient.chat.completions.create({
+          model: config.OPENROUTER_FAST_MODEL,
           max_tokens: 500,
           messages: [
             {
@@ -278,9 +275,7 @@ export function createMeetingCallWorker(): Worker {
 
         let summary = "";
         try {
-          const textBlock = analysis.content.find((b) => b.type === "text");
-          const raw =
-            textBlock && textBlock.type === "text" ? textBlock.text : "";
+          const raw = analysis.choices[0]?.message.content ?? "";
           const parsed = JSON.parse(
             raw.replace(/```json|```/g, "").trim(),
           ) as { summary?: string };
@@ -405,10 +400,8 @@ export function createMeetingCallWorker(): Worker {
               to: user.phone,
               from: config.TWILIO_PHONE_NUMBER,
               url: `${config.API_URL}/twilio/voice?context=${context}`,
+              // Trial-safe parameters only (trial accounts reject statusCallbackMethod/machineDetection).
               statusCallback: `${config.API_URL}/twilio/status`,
-              statusCallbackMethod: "POST",
-              machineDetection: "Enable",
-              machineDetectionTimeout: 30,
             });
 
             logger.info(

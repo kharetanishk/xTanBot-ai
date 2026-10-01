@@ -189,10 +189,15 @@ async function fireAlarm(alarm: AlarmWithUser): Promise<void> {
       `<Say>Goodbye.</Say><Hangup/>` +
       `</Response>`;
 
+    // Trial accounts reject inline `twiml`, so park it in Redis and give Twilio a URL to fetch.
+    const redis = new IORedis(config.REDIS_URL);
+    await redis.set(`alarm-twiml:${alarm.id}`, twiml, "EX", 3600);
+    redis.disconnect();
+
     const call = await client.calls.create({
       to: alarm.user.phone,
       from: config.TWILIO_PHONE_NUMBER,
-      twiml,
+      url: `${config.API_URL.replace(/\/$/, "")}/alarm/twiml/${alarm.id}`,
     });
 
     await prisma.alarm.update({
