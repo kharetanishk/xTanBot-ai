@@ -5,7 +5,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "dev": "node --require tsx/cjs src/index.ts",
+    "dev": "tsx src/index.ts",
     "prestart": "pnpm run build",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
@@ -31,8 +31,9 @@
     "@xtanbot/zod-schemas": "workspace:*",
     "fastify": "5.2.1",
     "fastify-plugin": "^5.1.0",
-    "ws": "^8.18.0",
+    "livekit-server-sdk": "^2.19.1",
     "twilio": "^5.3.0",
+    "ws": "^8.18.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
