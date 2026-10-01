@@ -52,16 +52,16 @@ export default function ChatTranscriptScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: "#09090b",
     paddingTop: 56,
     paddingHorizontal: 20,
   },
   backButton: { alignSelf: "flex-start" },
-  backText: { color: "#FBBF24", fontWeight: "900", fontSize: 14 },
+  backText: { color: "#FBBF24", fontWeight: "800", fontSize: 14 },
   header: { marginTop: 8, marginBottom: 16 },
   title: {
     fontSize: 24,
-    fontWeight: "900",
+    fontWeight: "800",
     color: "#ffffff",
   },
   subtitle: {
@@ -74,10 +74,10 @@ const styles = StyleSheet.create({
   skeletonWrap: { flex: 1 },
   skeleton: {
     height: 64,
-    backgroundColor: "#1a1a1a",
-    borderWidth: 3,
-    borderColor: "#333",
-    borderRadius: 0,
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#1f2937",
+    borderRadius: 16,
     marginBottom: 12,
   },
   empty: {
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: "900",
+    fontWeight: "800",
     color: "#ffffff",
   },
   emptySubtitle: {

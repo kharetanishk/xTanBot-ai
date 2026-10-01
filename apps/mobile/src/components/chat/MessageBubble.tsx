@@ -39,65 +39,17 @@ export default function MessageBubble({ message, isStreaming }: Props) {
   );
 }
 
+// Same look as the live chat screen: user = grey bubble on the right, assistant = dark card.
 const styles = StyleSheet.create({
-  row: {
-    marginVertical: 4,
-    marginHorizontal: 12,
-    flexDirection: "row",
-  },
-  rowRight: {
-    justifyContent: "flex-end",
-  },
-  rowLeft: {
-    justifyContent: "flex-start",
-  },
-  bubble: {
-    maxWidth: "75%",
-    padding: 12,
-    borderWidth: 2,
-    borderRadius: 0,
-  },
-  userBubble: {
-    backgroundColor: "#FBBF24",
-    borderColor: "#000",
-    shadowColor: "#000",
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
-  },
-  aiBubble: {
-    backgroundColor: "#ffffff",
-    borderColor: "#000",
-    shadowColor: "#000",
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
-  },
-  toolBubble: {
-    backgroundColor: "#6366f1",
-    borderColor: "#000",
-  },
-  userText: {
-    color: "#000000",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  aiText: {
-    color: "#000000",
-    fontSize: 14,
-  },
-  toolLabel: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "900",
-    marginBottom: 4,
-  },
-  timestamp: {
-    fontSize: 10,
-    color: "#6b7280",
-    marginTop: 4,
-  },
+  row: { marginVertical: 5, marginHorizontal: 12, flexDirection: "row" },
+  rowRight: { justifyContent: "flex-end" },
+  rowLeft: { justifyContent: "flex-start" },
+  bubble: { maxWidth: "80%", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
+  userBubble: { backgroundColor: "#1f2937", borderBottomRightRadius: 6 },
+  aiBubble: { backgroundColor: "#111827", borderWidth: 1, borderColor: "#1f2937", borderBottomLeftRadius: 6 },
+  toolBubble: { backgroundColor: "rgba(129,140,248,0.14)", borderBottomLeftRadius: 6 },
+  userText: { color: "#f9fafb", fontSize: 15, lineHeight: 22 },
+  aiText: { color: "#e5e7eb", fontSize: 15, lineHeight: 22 },
+  toolLabel: { color: "#818cf8", fontSize: 10, fontWeight: "800", letterSpacing: 1, marginBottom: 4 },
+  timestamp: { color: "#6b7280", fontSize: 10, marginTop: 6, alignSelf: "flex-end" },
 });
-

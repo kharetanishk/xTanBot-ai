@@ -15,15 +15,17 @@ import {
   Platform,
   Animated,
   Easing,
-  Image,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useAuthStore } from "../../../src/stores/auth.store";
-import { sendMessage } from "../../../src/api/conversations.api";
+import { sendMessage, listChats, getChatMessages, type ChatSummary } from "../../../src/api/conversations.api";
 import type { Message, StructuredPayload } from "../../../src/types/api.types";
+import XtanCharacter from "../../../src/components/character/XtanCharacter";
+import { SpeechBubble, useTypewriter } from "../../../src/components/character/SpeechBubble";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -36,6 +38,20 @@ const SUGGESTED = [
   { icon: "call-outline" as const,     text: "Make a sales call in sales mode" },
   { icon: "location-outline" as const, text: "Find the best restaurant near me" },
 ];
+
+/** Friendly status shown while a tool runs (streamed as SSE "tool" events). */
+const TOOL_LABELS: Record<string, string> = {
+  web_search: "Searching the web",
+  web_fetch: "Reading the page",
+  get_location: "Finding your location",
+  get_current_time: "Checking the time",
+  lookup_contact: "Looking up the contact",
+  schedule_meeting: "Scheduling the meeting",
+  set_alarm: "Setting the alarm",
+  make_call: "Setting up the call",
+  story_call: "Setting up the call",
+  send_whatsapp: "Preparing the WhatsApp message",
+};
 
 // ── Typing dots ────────────────────────────────────────────────────────
 function TypingDots() {
@@ -87,46 +103,37 @@ const t = StyleSheet.create({
 function CyclingPrompt({ onSelect }: { onSelect(text: string): void }) {
   const [index,   setIndex]   = useState(0);
   const opacity   = useRef(new Animated.Value(0)).current;
-  const scale     = useRef(new Animated.Value(0.94)).current;
+  const shift     = useRef(new Animated.Value(10)).current; // px: rises in from below, drifts out above
   const glow      = useRef(new Animated.Value(0)).current;
 
-  // Sequence: blink-in (80ms) → hold (1800ms) → blink-out (120ms) → next
+  // Sequence: ease in (700ms) → hold (2600ms) → ease out (650ms) → next. Slow fades + a small
+  // drift so prompts glide in and out instead of flashing.
   useEffect(() => {
     let cancelled = false;
+    const ease = Easing.bezier(0.4, 0, 0.2, 1);
 
-    function cycle() {
-      if (cancelled) return;
+    opacity.setValue(0);
+    shift.setValue(10);
+    glow.setValue(0);
 
-      // Reset
-      opacity.setValue(0);
-      scale.setValue(0.94);
-      glow.setValue(0);
-
-      Animated.sequence([
-        // Blink in
-        Animated.parallel([
-          Animated.timing(opacity, { toValue: 1, duration: 80,  useNativeDriver: true }),
-          Animated.timing(scale,   { toValue: 1, duration: 120, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
-          Animated.timing(glow,    { toValue: 1, duration: 80,  useNativeDriver: false }),
-        ]),
-        // Hold
-        Animated.delay(1800),
-        // Blink out
-        Animated.parallel([
-          Animated.timing(opacity, { toValue: 0, duration: 120, useNativeDriver: true }),
-          Animated.timing(glow,    { toValue: 0, duration: 120, useNativeDriver: false }),
-        ]),
-        // Gap before next
-        Animated.delay(120),
-      ]).start(({ finished }) => {
-        if (finished && !cancelled) {
-          setIndex((i) => (i + 1) % SUGGESTED.length);
-        }
-      });
-    }
-
-    cycle();
-    return () => { cancelled = true; };
+    const anim = Animated.sequence([
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 700, easing: ease, useNativeDriver: true }),
+        Animated.timing(shift,   { toValue: 0, duration: 700, easing: ease, useNativeDriver: true }),
+        Animated.timing(glow,    { toValue: 1, duration: 900, easing: ease, useNativeDriver: false }),
+      ]),
+      Animated.delay(2600),
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0,   duration: 650, easing: ease, useNativeDriver: true }),
+        Animated.timing(shift,   { toValue: -10, duration: 650, easing: ease, useNativeDriver: true }),
+        Animated.timing(glow,    { toValue: 0,   duration: 650, easing: ease, useNativeDriver: false }),
+      ]),
+      Animated.delay(150),
+    ]);
+    anim.start(({ finished }) => {
+      if (finished && !cancelled) setIndex((i) => (i + 1) % SUGGESTED.length);
+    });
+    return () => { cancelled = true; anim.stop(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
@@ -138,7 +145,7 @@ function CyclingPrompt({ onSelect }: { onSelect(text: string): void }) {
   });
 
   return (
-    <Animated.View style={{ opacity, transform: [{ scale }] }}>
+    <Animated.View style={{ opacity, transform: [{ translateY: shift }] }}>
       <Pressable onPress={() => onSelect(item.text)}>
         <Animated.View style={[cy.card, { borderColor }]}>
           <View style={cy.iconRing}>
@@ -188,29 +195,31 @@ const cy = StyleSheet.create({
 });
 
 // ── Empty / welcome state ─────────────────────────────────────────────
-function EmptyState({ onSelect }: { onSelect(text: string): void }) {
+function EmptyState({ onSelect, name }: { onSelect(text: string): void; name?: string }) {
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale   = useRef(new Animated.Value(0.82)).current;
+  const [waving, setWaving] = useState(true);
 
   useEffect(() => {
     Animated.parallel([
       Animated.spring(logoScale,   { toValue: 1, useNativeDriver: true, tension: 55, friction: 9 }),
       Animated.timing(logoOpacity, { toValue: 1, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
+    const t = setTimeout(() => setWaving(false), 2600);
+    return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const logoSize = Math.min(SCREEN_W * 0.80, 340);
+  const first = name?.split(/[\s_]+/)[0];
+  const greeting = `Hey${first ? ` ${first}` : ""}! I'm xTan 💛 What can I do for you today?`;
+  const { shown, done } = useTypewriter(greeting, 34, 400);
+  const charSize = Math.min(SCREEN_W * 0.46, 200);
 
   return (
     <View style={es.root}>
-      {/* Big logo */}
+      <SpeechBubble text={shown || " "} typing={!done} tail="bottom" style={es.bubble} />
       <Animated.View style={[es.logoWrap, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
-        <Image
-          source={require("../../../assets/images/xt.png")}
-          style={{ width: logoSize, height: logoSize }}
-          resizeMode="contain"
-        />
+        <XtanCharacter size={charSize} variant="full" talking={!done} wave={waving} />
       </Animated.View>
 
       {/* Cycling prompt */}
@@ -230,8 +239,9 @@ const es = StyleSheet.create({
   },
   logoWrap: {
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 20,
   },
+  bubble: { width: "100%", maxWidth: 420, marginBottom: 14 },
   promptWrap: {
     width: "100%",
     maxWidth: 420,
@@ -241,11 +251,14 @@ const es = StyleSheet.create({
 // ── Main chat screen ──────────────────────────────────────────────────
 export default function ChatScreen() {
   const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const { prefill } = useLocalSearchParams<{ prefill?: string }>();
   const [messages,       setMessages]       = useState<Message[]>([]);
   const [inputText,      setInputText]      = useState(prefill ?? "");
   const [isStreaming,    setIsStreaming]     = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [toolStatus,     setToolStatus]     = useState<string | null>(null);
+  const [chats,          setChats]          = useState<ChatSummary[] | null>(null); // non-null = history open
   const listRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
@@ -276,33 +289,98 @@ export default function ChatScreen() {
       };
       setMessages((prev) => [...prev, streamingMsg]);
 
-      const onChunk = (chunk: string) =>
+      // Smooth streaming: the model often delivers text in sentence-sized bursts, so we
+      // buffer what arrives and reveal it word by word at a steady pace (faster when the
+      // buffer grows, so it never lags far behind) — the ChatGPT/Claude feel.
+      let pending = "";
+      let finalMsg: { content?: string; payload?: StructuredPayload | null } | null = null;
+      const appendToBubble = (text: string) =>
+        setMessages((prev) =>
+          prev.map((m) => (m.id === "streaming" ? { ...m, content: (m.content ?? "") + text } : m)),
+        );
+      const finalize = () => {
+        clearInterval(pump);
+        setIsStreaming(false);
+        setToolStatus(null);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === "streaming"
-              ? { ...m, content: (m.content ?? "") + chunk }
+              ? {
+                  ...m,
+                  id: `assistant-${Date.now()}`,
+                  content: finalMsg?.content ?? m.content,
+                  structuredPayload: finalMsg?.payload ?? null,
+                }
               : m,
           ),
         );
+      };
+      const pump = setInterval(() => {
+        if (pending) {
+          const words = pending.match(/\S+\s*|\s+/g) ?? [pending];
+          const take = Math.max(1, Math.ceil(words.length / 12)); // catch up within ~0.4s
+          const piece = words.slice(0, take).join("");
+          pending = pending.slice(piece.length);
+          appendToBubble(piece);
+        } else if (finalMsg) {
+          finalize();
+        }
+      }, 35);
 
-      const onDone = (newId: string, payload?: StructuredPayload | null) => {
-        setIsStreaming(false);
-        setMessages((prev) => {
-          const streaming = prev.find((m) => m.id === "streaming");
-          if (!streaming) return prev;
-          const final: Message = {
-            ...streaming,
-            id: `assistant-${Date.now()}`,
-            structuredPayload: payload ?? null,
-          };
-          return prev.map((m) => (m.id === "streaming" ? final : m));
-        });
-        if (newId) setConversationId(newId);
+      const onChunk = (chunk: string) => {
+        setToolStatus(null);
+        pending += chunk;
       };
 
-      await sendMessage(token, conversationId, trimmed, onChunk, onDone);
+      const finish = (content?: string, payload?: StructuredPayload | null) => {
+        // Let the buffer finish revealing, then swap in the saved final text + cards.
+        finalMsg = { content, payload };
+      };
+
+      try {
+        await sendMessage(token, conversationId, trimmed, {
+          onChunk,
+          onTool: (name) => setToolStatus(TOOL_LABELS[name] ?? "Working on it"),
+          onDone: (newId, payload, message) => {
+            finish(message, payload);
+            if (newId) setConversationId(newId);
+          },
+        });
+      } catch {
+        pending = "";
+        finish("Sorry — I couldn't reach xTanBot. Check your connection and try again.");
+      }
     },
     [isStreaming, token, conversationId],
+  );
+
+  // Each chat is its own server conversation; switching just swaps id + messages.
+  const startNewChat = useCallback(() => {
+    if (isStreaming) return;
+    setChats(null);
+    setConversationId(null);
+    setMessages([]);
+    setInputText("");
+  }, [isStreaming]);
+
+  const toggleHistory = useCallback(() => {
+    if (chats) return setChats(null);
+    setChats([]);
+    listChats().then(setChats).catch(() => setChats(null));
+  }, [chats]);
+
+  const openChat = useCallback(
+    async (id: string) => {
+      if (isStreaming) return;
+      setChats(null);
+      try {
+        setMessages(await getChatMessages(id));
+        setConversationId(id);
+      } catch {
+        // stay on the current chat
+      }
+    },
+    [isStreaming],
   );
 
   const handleSend = useCallback(() => {
@@ -392,52 +470,61 @@ export default function ChatScreen() {
 
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
-      const isUser   = item.role === "user";
+      if (item.role === "user") {
+        return (
+          <View style={m.userRow}>
+            <View style={m.userBubble}>
+              <Text style={m.textUser}>{item.content}</Text>
+            </View>
+          </View>
+        );
+      }
+
       const isStream = item.id === "streaming";
-      const showDots = isStream && isStreaming && (!item.content || item.content === "");
+      const hasText = Boolean(item.content);
 
       return (
-        <View style={[m.row, isUser ? m.rowRight : m.rowLeft]}>
-          {!isUser ? (
-            <View style={m.avatar}>
-              <Image
-                source={require("../../../assets/images/xt.png")}
-                style={m.avatarImg}
-                resizeMode="contain"
-              />
-            </View>
-          ) : null}
-
-          <View style={{ maxWidth: "78%", alignItems: isUser ? "flex-end" : "flex-start" }}>
-            <View style={[m.bubble, isUser ? m.bubbleUser : m.bubbleAi]}>
-              {showDots ? (
-                <TypingDots />
-              ) : (
-                <>
-                  <Text style={isUser ? m.textUser : m.textAi}>
-                    {item.content}
-                    {isStream && isStreaming && item.content ? "▊" : ""}
-                  </Text>
-                  {!isUser && item.structuredPayload && item.structuredPayload.type !== "none"
-                    ? renderPayload(item.structuredPayload)
-                    : null}
-                </>
-              )}
-            </View>
-            <Text style={[m.ts, isUser ? m.tsRight : m.tsLeft]}>
-              {new Date(item.createdAt).toLocaleTimeString("en-IN", {
-                hour: "2-digit", minute: "2-digit",
-              })}
-            </Text>
+        <View style={m.aiRow}>
+          <View style={m.avatar}>
+            <XtanCharacter size={30} variant="face" still talking={isStream && hasText} />
+          </View>
+          <View style={m.aiBody}>
+            {isStream && toolStatus ? (
+              <View style={m.toolChip}>
+                <ActivityIndicator size="small" color="#FBBF24" />
+                <Text style={m.toolText}>{toolStatus}…</Text>
+              </View>
+            ) : null}
+            {isStream && !hasText && !toolStatus ? <TypingDots /> : null}
+            {hasText ? (
+              <Text style={m.textAi}>
+                {item.content}
+                {isStream ? <Text style={m.cursor}> ●</Text> : null}
+              </Text>
+            ) : null}
+            {!isStream && item.structuredPayload && item.structuredPayload.type !== "none"
+              ? renderPayload(item.structuredPayload)
+              : null}
           </View>
         </View>
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isStreaming, handleActionPress],
+    [toolStatus, handleActionPress],
   );
 
-  const canSend = Boolean(inputText.trim()) && !isStreaming;
+  // Web: Enter sends, Shift+Enter adds a new line (like ChatGPT/Claude).
+  const handleKeyPress = useCallback(
+    (e: { nativeEvent: { key: string; shiftKey?: boolean }; preventDefault?: () => void }) => {
+      if (Platform.OS === "web" && e.nativeEvent.key === "Enter" && !e.nativeEvent.shiftKey) {
+        e.preventDefault?.();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
+
+  const hasInput = Boolean(inputText.trim());
 
   return (
     <SafeAreaView style={s.safe} edges={["top", "left", "right"]}>
@@ -448,21 +535,53 @@ export default function ChatScreen() {
       >
         {/* Header */}
         <View style={s.header}>
-          <Image
-            source={require("../../../assets/images/xt.png")}
-            style={s.headerLogo}
-            resizeMode="contain"
-          />
-          <Text style={s.headerBrand}>xTanBot</Text>
-          <View style={s.headerRight}>
-            <View style={s.onlineDot} />
-            <Text style={s.onlineLabel}>Online</Text>
+          <View style={s.headerAvatar}>
+            <XtanCharacter size={38} variant="face" still talking={isStreaming && !toolStatus} />
           </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.headerBrand}>xTan</Text>
+            <Text style={s.headerSub}>
+              {isStreaming ? (toolStatus ? `${toolStatus}…` : "typing…") : "Your personal assistant"}
+            </Text>
+          </View>
+          <Pressable onPress={toggleHistory} style={s.headerBtn} accessibilityLabel="Chat history">
+            <Ionicons name="time-outline" size={20} color={chats ? "#fbbf24" : "#9ca3af"} />
+          </Pressable>
+          <Pressable
+            onPress={startNewChat}
+            disabled={isStreaming}
+            style={[s.headerBtn, isStreaming && { opacity: 0.4 }]}
+            accessibilityLabel="New chat"
+          >
+            <Ionicons name="create-outline" size={20} color="#9ca3af" />
+          </Pressable>
         </View>
+
+        {chats && (
+          <View style={s.history}>
+            {chats.length === 0 ? (
+              <Text style={s.historyEmpty}>No previous chats yet</Text>
+            ) : (
+              <FlatList
+                data={chats}
+                keyExtractor={(c) => c.id}
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => void openChat(item.id)}
+                    style={[s.historyItem, item.id === conversationId && s.historyItemActive]}
+                  >
+                    <Text style={s.historyTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={s.historyDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                  </Pressable>
+                )}
+              />
+            )}
+          </View>
+        )}
 
         {/* Body */}
         {messages.length === 0 ? (
-          <EmptyState onSelect={(text) => setInputText(text)} />
+          <EmptyState onSelect={(text) => setInputText(text)} name={user?.name} />
         ) : (
           <FlatList
             ref={listRef}
@@ -476,30 +595,43 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* Input bar */}
+        {/* Composer: one pill, one trailing action — mic when empty, send when typed, spinner while replying */}
         <View style={s.bar}>
-          <TextInput
-            style={[s.input, isStreaming ? s.inputDisabled : null]}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask xTanBot anything…"
-            placeholderTextColor="#4b5563"
-            multiline
-            maxLength={2000}
-            editable={!isStreaming}
-            onSubmitEditing={handleSend}
-          />
-          <Pressable
-            onPress={handleSend}
-            disabled={!canSend}
-            style={[s.sendBtn, !canSend ? s.sendBtnOff : null]}
-          >
+          <View style={s.composer}>
+            <TextInput
+              style={s.input}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Ask xTanBot anything…"
+              placeholderTextColor="#6b7280"
+              multiline
+              maxLength={2000}
+              editable={!isStreaming}
+              onKeyPress={handleKeyPress}
+              {...(Platform.OS === "web" ? ({ rows: 1 } as object) : {})}
+            />
             {isStreaming ? (
-              <Ionicons name="ellipsis-horizontal" size={18} color="#4b5563" />
+              <View style={[s.actionBtn, s.actionBtnBusy]}>
+                <ActivityIndicator size="small" color="#9ca3af" />
+              </View>
+            ) : hasInput ? (
+              <Pressable
+                onPress={handleSend}
+                style={[s.actionBtn, s.actionBtnPrimary]}
+                accessibilityLabel="Send message"
+              >
+                <Ionicons name="arrow-up" size={20} color="#000" />
+              </Pressable>
             ) : (
-              <Ionicons name="arrow-up" size={20} color={canSend ? "#000" : "#4b5563"} />
+              <Pressable
+                onPress={() => router.push("/voice")}
+                style={[s.actionBtn, s.actionBtnPrimary]}
+                accessibilityLabel="Start voice chat"
+              >
+                <Ionicons name="mic" size={19} color="#000" />
+              </Pressable>
             )}
-          </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -561,44 +693,47 @@ const p = StyleSheet.create({
   actionTextLight: { color: "#fff" },
 });
 
-// ── Message styles ────────────────────────────────────────────────────
+// ── Message styles (ChatGPT/Claude-like: user bubbles, assistant as plain text) ──
 const m = StyleSheet.create({
-  row:       { flexDirection: "row", marginBottom: 12, alignItems: "flex-end", gap: 8 },
-  rowRight:  { justifyContent: "flex-end" },
-  rowLeft:   { justifyContent: "flex-start" },
+  userRow: { alignItems: "flex-end", marginBottom: 18 },
+  userBubble: {
+    maxWidth: "82%",
+    backgroundColor: "#1f2937",
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  textUser: { color: "#f9fafb", fontSize: 15, lineHeight: 22 },
+
+  aiRow:  { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 22 },
   avatar: {
     width: 30,
     height: 30,
     borderRadius: 15,
     backgroundColor: "#111827",
-    overflow: "hidden",
     borderWidth: 1,
     borderColor: "#1f2937",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
+    overflow: "hidden",
   },
-  avatarImg: { width: 22, height: 22 },
-  bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
-  bubbleUser: {
-    backgroundColor: "#FBBF24",
-    borderBottomRightRadius: 4,
-  },
-  bubbleAi: {
+  aiBody:   { flex: 1, paddingTop: 4, gap: 8 },
+  textAi:   { color: "#e5e7eb", fontSize: 15, lineHeight: 24 },
+  cursor:   { color: "#FBBF24", fontSize: 11 },
+  toolChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 8,
     backgroundColor: "#111827",
     borderWidth: 1,
     borderColor: "#1f2937",
-    borderBottomLeftRadius: 4,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  textUser: { color: "#000", fontWeight: "700", fontSize: 15, lineHeight: 21 },
-  textAi:   { color: "#e5e7eb", fontWeight: "400", fontSize: 15, lineHeight: 22 },
-  ts:       { fontSize: 10, color: "#4b5563", marginTop: 2, marginHorizontal: 4 },
-  tsRight:  { alignSelf: "flex-end" },
-  tsLeft:   { alignSelf: "flex-start" },
+  toolText: { color: "#d1d5db", fontSize: 13, fontWeight: "600" },
 });
 
 // ── Screen / chrome styles ────────────────────────────────────────────
@@ -616,55 +751,80 @@ const s = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  headerLogo:  { width: 28, height: 28 },
-  headerBrand: { color: "#fff", fontWeight: "900", fontSize: 17, flex: 1 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 5 },
-  onlineDot:   { width: 7, height: 7, borderRadius: 4, backgroundColor: "#10B981" },
-  onlineLabel: { color: "#10B981", fontSize: 12, fontWeight: "600" },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: "hidden",
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerBrand: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  headerSub:   { color: "#9ca3af", fontSize: 12, marginTop: 1 },
+  headerBtn:   { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "#111827" },
+  history: {
+    position: "absolute", top: 58, right: 12, zIndex: 20, width: 300, maxWidth: "92%", maxHeight: 360,
+    backgroundColor: "#0f172a", borderRadius: 14, borderWidth: 1, borderColor: "#1f2937", paddingVertical: 6,
+  },
+  historyEmpty:      { color: "#9ca3af", fontSize: 13, padding: 14 },
+  historyItem:       { paddingHorizontal: 14, paddingVertical: 10 },
+  historyItemActive: { backgroundColor: "rgba(251,191,36,0.12)" },
+  historyTitle:      { color: "#e5e7eb", fontSize: 14 },
+  historyDate:       { color: "#6b7280", fontSize: 11, marginTop: 2 },
 
   list:        { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 8 },
+  listContent: {
+    width: "100%",
+    maxWidth: 820,
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingBottom: 8,
+  },
 
   bar: {
+    backgroundColor: "#09090b",
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  composer: {
+    width: "100%",
+    maxWidth: 820,
+    alignSelf: "center",
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: "#09090b",
-    borderTopWidth: 1,
-    borderTopColor: "#111827",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     gap: 8,
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#1f2937",
+    borderRadius: 26,
+    paddingLeft: 18,
+    paddingRight: 6,
+    paddingVertical: 6,
   },
   input: {
     flex: 1,
-    backgroundColor: "#111827",
-    borderWidth: 1.5,
-    borderColor: "#1f2937",
-    borderRadius: 22,
     color: "#fff",
-    paddingHorizontal: 18,
-    paddingVertical: Platform.OS === "ios" ? 12 : 10,
     fontSize: 15,
-    maxHeight: 110,
-    lineHeight: 21,
+    lineHeight: 20,
+    minHeight: 40,
+    maxHeight: 120,
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingHorizontal: 0,
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
   },
-  inputDisabled: { opacity: 0.5 },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#FBBF24",
+  actionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#FBBF24",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 4,
   },
-  sendBtnOff: {
-    backgroundColor: "#111827",
-    shadowOpacity: 0,
-    elevation: 0,
-  },
+  actionBtnPrimary: { backgroundColor: "#FBBF24" },
+  actionBtnBusy:    { backgroundColor: "#1f2937" },
 });
