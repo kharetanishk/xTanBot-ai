@@ -1,12 +1,5 @@
-import { useState } from "react";
-import {
-  Pressable,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  type ViewStyle,
-  type TextStyle,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { colors, radius } from "../../theme";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -18,114 +11,47 @@ type ButtonProps = {
   variant?: ButtonVariant;
 };
 
-const variantStyles: Record<ButtonVariant, { container: ViewStyle; text: TextStyle }> = {
-  primary: {
-    container: {
-      backgroundColor: "#FBBF24",
-      borderWidth: 3,
-      borderColor: "#000000",
-      shadowOffset: { width: 4, height: 4 },
-      shadowColor: "#000000",
-      shadowOpacity: 1,
-      shadowRadius: 0,
-      elevation: 4,
-    },
-    text: { color: "#000000" },
-  },
-  secondary: {
-    container: {
-      backgroundColor: "#6366f1",
-      borderWidth: 3,
-      borderColor: "#000000",
-      shadowOffset: { width: 4, height: 4 },
-      shadowColor: "#000000",
-      shadowOpacity: 1,
-      shadowRadius: 0,
-      elevation: 4,
-    },
-    text: { color: "#ffffff" },
-  },
-  ghost: {
-    container: {
-      backgroundColor: "transparent",
-      borderWidth: 2,
-      borderColor: "#ffffff",
-      shadowOffset: { width: 0, height: 0 },
-      shadowColor: "transparent",
-      shadowOpacity: 0,
-      shadowRadius: 0,
-      elevation: 0,
-    },
-    text: { color: "#ffffff" },
-  },
-  danger: {
-    container: {
-      backgroundColor: "#ef4444",
-      borderWidth: 3,
-      borderColor: "#000000",
-      shadowOffset: { width: 4, height: 4 },
-      shadowColor: "#000000",
-      shadowOpacity: 1,
-      shadowRadius: 0,
-      elevation: 4,
-    },
-    text: { color: "#ffffff" },
-  },
+const VARIANTS: Record<ButtonVariant, { bg: string; fg: string; border?: string }> = {
+  primary: { bg: colors.accent, fg: colors.onAccent },
+  secondary: { bg: colors.surfaceAlt, fg: colors.text },
+  ghost: { bg: "transparent", fg: colors.text, border: colors.borderStrong },
+  danger: { bg: colors.dangerSoft, fg: colors.danger, border: "rgba(239,68,68,0.35)" },
 };
 
-export default function Button({
-  title,
-  onPress,
-  loading = false,
-  disabled = false,
-  variant = "primary",
-}: ButtonProps) {
-  const [pressed, setPressed] = useState(false);
+export default function Button({ title, onPress, loading = false, disabled = false, variant = "primary" }: ButtonProps) {
+  const v = VARIANTS[variant];
   const isDisabled = disabled || loading;
-  const style = variantStyles[variant];
-
   return (
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      style={[
-        styles.base,
-        style.container,
-        pressed && variant !== "ghost" && styles.pressed,
-        isDisabled && styles.disabled,
+      style={({ pressed }) => [
+        s.base,
+        { backgroundColor: v.bg, borderColor: v.border ?? "transparent" },
+        pressed && s.pressed,
+        isDisabled && s.disabled,
       ]}
     >
       {loading ? (
-        <ActivityIndicator
-          color={variant === "primary" ? "#000000" : "#ffffff"}
-          size="small"
-        />
+        <ActivityIndicator color={v.fg} size="small" />
       ) : (
-        <Text style={[styles.text, style.text]}>{title}</Text>
+        // Callers pass SHOUTY titles from the old design; sentence-case reads calmer.
+        <Text style={[s.text, { color: v.fg }]}>{title.charAt(0) + title.slice(1).toLowerCase()}</Text>
       )}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   base: {
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 0,
+    borderRadius: radius.pill,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  text: {
-    fontWeight: "900",
-    fontSize: 16,
-  },
-  pressed: {
-    transform: [{ translateX: 2 }, { translateY: 2 }],
-    shadowOffset: { width: 2, height: 2 },
-  },
-  disabled: {
-    opacity: 0.6,
-  },
+  text: { fontWeight: "700", fontSize: 16 },
+  pressed: { opacity: 0.85, transform: [{ scale: 0.985 }] },
+  disabled: { opacity: 0.55 },
 });

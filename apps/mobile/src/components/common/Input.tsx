@@ -1,4 +1,6 @@
+import { useState, type Ref } from "react";
 import {
+  Platform,
   View,
   Text,
   TextInput,
@@ -18,6 +20,9 @@ type InputProps = {
   onSubmitEditing?: () => void;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
   error?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  inputRef?: Ref<TextInput>;
 };
 
 export default function Input({
@@ -31,16 +36,30 @@ export default function Input({
   onSubmitEditing,
   autoCapitalize,
   error,
+  onFocus,
+  onBlur,
+  inputRef,
 }: InputProps) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
+      {/* Callers pass UPPERCASE labels from the old design; sentence-case reads calmer. */}
+      <Text style={styles.label}>{label.charAt(0) + label.slice(1).toLowerCase()}</Text>
       <TextInput
-        style={[styles.input, error ? styles.inputError : null]}
+        ref={inputRef}
+        onFocus={() => {
+          setFocused(true);
+          onFocus?.();
+        }}
+        onBlur={() => {
+          setFocused(false);
+          onBlur?.();
+        }}
+        style={[styles.input, focused && styles.inputFocused, error ? styles.inputError : null]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#999999"
+        placeholderTextColor="#6b7280"
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
         returnKeyType={returnKeyType}
@@ -53,35 +72,20 @@ export default function Input({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 16,
-  },
-  label: {
-    color: "#000000",
-    fontWeight: "700",
-    fontSize: 13,
-    marginBottom: 6,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  container: { marginBottom: 16 },
+  label: { color: "#9ca3af", fontWeight: "600", fontSize: 13, marginBottom: 8 },
   input: {
-    backgroundColor: "#ffffff",
-    borderWidth: 3,
-    borderColor: "#000000",
-    borderRadius: 0,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#1f2937",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
-    color: "#000000",
-    fontWeight: "600",
+    color: "#f9fafb",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
   },
-  inputError: {
-    borderColor: "#EF4444",
-  },
-  errorText: {
-    color: "#EF4444",
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: "600",
-  },
+  inputFocused: { borderColor: "rgba(251,191,36,0.6)" },
+  inputError: { borderColor: "#ef4444" },
+  errorText: { color: "#ef4444", fontSize: 12, marginTop: 6, fontWeight: "600" },
 });

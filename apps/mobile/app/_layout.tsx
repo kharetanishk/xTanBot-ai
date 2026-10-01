@@ -4,6 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import Toast, { BaseToast, ErrorToast } from "react-native-toast-message";
 import { useAuthStore } from "../src/stores/auth.store";
+import { useFonts } from "expo-font";
+import {
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_700Bold,
+  BricolageGrotesque_800ExtraBold,
+} from "@expo-google-fonts/bricolage-grotesque";
+import { Caveat_700Bold } from "@expo-google-fonts/caveat";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,6 +26,8 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   const loadToken = useAuthStore((s) => s.loadToken);
+  // App-wide display + handwritten fonts (text falls back to system until loaded).
+  useFonts({ BricolageGrotesque_600SemiBold, BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold, Caveat_700Bold });
 
   useEffect(() => {
     loadToken();
@@ -33,6 +42,8 @@ export default function RootLayout() {
           backgroundColor: "#111111",
           borderWidth: 2,
           borderColor: "#000",
+          width: "92%", // library default is a fixed 340px — wider than small phones
+          maxWidth: 340,
         }}
         text1Style={{ fontSize: 15, fontWeight: "800", color: "#fff" }}
         text2Style={{ fontSize: 13, color: "#d4d4d4" }}
@@ -46,6 +57,8 @@ export default function RootLayout() {
           backgroundColor: "#111111",
           borderWidth: 2,
           borderColor: "#000",
+          width: "92%", // library default is a fixed 340px — wider than small phones
+          maxWidth: 340,
         }}
         text1Style={{ fontSize: 15, fontWeight: "800", color: "#fff" }}
         text2Style={{ fontSize: 13, color: "#fecaca" }}
@@ -59,6 +72,8 @@ export default function RootLayout() {
           backgroundColor: "#111111",
           borderWidth: 2,
           borderColor: "#000",
+          width: "92%", // library default is a fixed 340px — wider than small phones
+          maxWidth: 340,
         }}
         text1Style={{ fontSize: 14, fontWeight: "800", color: "#fff" }}
         text2Style={{ fontSize: 13, color: "#d4d4d4" }}

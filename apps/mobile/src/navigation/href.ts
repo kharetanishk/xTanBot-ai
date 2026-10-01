@@ -16,3 +16,8 @@ export function hrefDashboardMeetings(): Href {
 export function hrefAbout(): Href {
   return "/about" as unknown as Href;
 }
+
+/** Any dashboard tab, e.g. hrefTab("settings"). */
+export function hrefTab(name: "alarms" | "chat" | "contacts" | "settings"): Href {
+  return `/dashboard/${name}` as unknown as Href;
+}
