@@ -29,5 +29,6 @@ pm2 restart xtanbot-worker 2>/dev/null || pm2 start apps/worker/dist/index.js   
 pm2 restart xtanbot-voice  2>/dev/null || pm2 start apps/voice-agent/dist/index.js --name xtanbot-voice -- start
 pm2 save
 
-sleep 5
-curl -fsS "http://127.0.0.1:$(grep -oP '^API_PORT=\K.*' .env)/health" && echo " ✓ deployed"
+PORT=$(grep -oP '^API_PORT=\K.*' .env)
+for _ in $(seq 30); do curl -fsS "http://127.0.0.1:$PORT/health" && echo " ✓ deployed" && exit 0; sleep 2; done
+echo "✗ API not healthy — check: pm2 logs xtanbot-api" && exit 1
