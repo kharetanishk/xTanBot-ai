@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: xtanbot
       POSTGRES_HOST_AUTH_METHOD: md5
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     command: redis-server --requirepass xtanbot_secret --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
-      - "6381:6379"
+      - "127.0.0.1:6381:6379"
     volumes:
       - redis_data:/data
     healthcheck:
