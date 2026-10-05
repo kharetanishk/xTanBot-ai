@@ -11,7 +11,8 @@ import type { Call, Contact } from "../../../src/types/api.types";
 import XtanCharacter from "../../../src/components/character/XtanCharacter";
 import CallCard from "../../../src/components/calls/CallCard";
 import ContactAvatar from "../../../src/components/contacts/ContactAvatar";
-import { GradientIcon, type Gradient, type IconName } from "../../../src/components/ui";
+import { GradientIcon, PhoneCallsNotice, type Gradient, type IconName } from "../../../src/components/ui";
+import { PHONE_CALLS_ENABLED } from "../../../src/constants/config";
 import { CALL_STATUS_TONE } from "../../../src/components/calls/StatusBadge";
 import { colors, radius, toneColors } from "../../../src/theme";
 
@@ -340,8 +341,8 @@ export default function NewCallScreen() {
         </View>
         <Pressable
           onPress={handleStartStoryCall}
-          disabled={startStoryCall.isPending}
-          style={({ pressed }) => [s.cta, !ready && { opacity: 0.55 }, pressed && s.pressed]}
+          disabled={startStoryCall.isPending || !PHONE_CALLS_ENABLED}
+          style={({ pressed }) => [s.cta, (!ready || !PHONE_CALLS_ENABLED) && { opacity: 0.55 }, pressed && s.pressed]}
         >
           <Ionicons name="call" size={18} color={colors.onAccent} />
           <Text style={s.ctaText}>{startStoryCall.isPending ? "Starting…" : "Start call"}</Text>
@@ -373,6 +374,8 @@ export default function NewCallScreen() {
             <Text style={s.subtitle}>Give xTan a brief — she'll make the call and talk for you.</Text>
           </View>
         </Animated.View>
+
+        <PhoneCallsNotice />
 
         {wide ? (
           <View style={s.columns}>

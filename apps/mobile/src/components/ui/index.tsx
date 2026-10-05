@@ -21,6 +21,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { colors, radius, toneColors, type Tone } from "../../theme";
+import { PHONE_CALLS_ENABLED } from "../../constants/config";
 
 export type IconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -88,6 +89,26 @@ export function Card({
     >
       {children}
     </Pressable>
+  );
+}
+
+/** Explains that real phone calls are paused (free calling plan). Renders nothing once calls are enabled. */
+export function PhoneCallsNotice({
+  message = "We're on a free calling plan right now, so xTanBot can't place real phone calls for the moment. Voice chat, web search, contacts and meetings all still work.",
+  style,
+}: {
+  message?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  if (PHONE_CALLS_ENABLED) return null;
+  return (
+    <View style={[ui.notice, style]} accessibilityRole="alert">
+      <IconTile icon="call-outline" tone="info" size={36} />
+      <View style={{ flex: 1 }}>
+        <Text style={ui.noticeTitle}>Phone calls are paused for now</Text>
+        <Text style={ui.noticeText}>{message}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -322,6 +343,19 @@ function Bar({
 }
 
 export const ui = StyleSheet.create({
+  notice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.infoSoft,
+    backgroundColor: colors.surface,
+  },
+  noticeTitle: { color: colors.text, fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  noticeText: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
   screen: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row",

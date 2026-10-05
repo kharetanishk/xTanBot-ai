@@ -1,7 +1,7 @@
 import { callRepository, userRepository } from "@xtanbot/db";
 import { emit } from "@xtanbot/events";
 import { createLogger } from "@xtanbot/logger";
-import { config } from "@xtanbot/config";
+import { config, PHONE_CALLS_PAUSED_MESSAGE } from "@xtanbot/config";
 import { histogram } from "@xtanbot/observability";
 import twilio from "twilio";
 import type { CreateCall } from "@xtanbot/zod-schemas";
@@ -21,6 +21,10 @@ const twilioClient = twilio(
 
 export const callService = {
   async initiateCall(data: CreateCall & { streamBaseUrl: string }) {
+    if (!config.PHONE_CALLS_ENABLED) {
+      throw Object.assign(new Error(PHONE_CALLS_PAUSED_MESSAGE), { statusCode: 503 });
+    }
+
     logger.info(
       { toNumber: data.toNumber, userId: data.userId },
       "Initiating call",

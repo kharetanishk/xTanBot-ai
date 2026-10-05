@@ -19,7 +19,7 @@ import { useAuthStore } from "../../../src/stores/auth.store";
 import { parseError } from "../../../src/utils/error.utils";
 import ErrorMessage from "../../../src/components/common/ErrorMessage";
 import type { Contact } from "../../../src/types/api.types";
-import { Screen, GradientIcon, PrimaryButton, Appear } from "../../../src/components/ui";
+import { Screen, GradientIcon, PrimaryButton, Appear, PhoneCallsNotice } from "../../../src/components/ui";
 
 // ── Quick picks ───────────────────────────────────────────────────────
 const NEXT_DAYS = Array.from({ length: 14 }, (_, i) => {
@@ -789,6 +789,7 @@ export default function NewMeetingScreen() {
           <Text style={s.hint}>
             What should the AI ask or achieve during the auto-call?
           </Text>
+          <PhoneCallsNotice message="Your meeting will be saved and you'll still get a reminder, but the auto-call to attendees is off for now while we're on a free calling plan." />
           <TextInput
             style={[s.input, s.textArea]}
             value={agenda}

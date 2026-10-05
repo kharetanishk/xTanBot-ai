@@ -100,6 +100,11 @@ export function createMeetingCallWorker(): Worker {
     async (job: Job<AutoCallMeetingPayload | ReminderPayload | PostCallPayload | DailyBriefingPayload>) => {
       const log = logger.child({ jobId: job.id, jobName: job.name });
 
+      if (!config.PHONE_CALLS_ENABLED && (job.name === "auto-call-meeting" || job.name === "daily-briefing")) {
+        log.info("Phone calls paused (PHONE_CALLS_ENABLED=false) — skipping call job");
+        return;
+      }
+
         if (job.name === "auto-call-meeting") {
         const { meetingId, userId, title, attendees, agenda } =
           job.data as AutoCallMeetingPayload;

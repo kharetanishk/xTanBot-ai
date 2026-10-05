@@ -46,6 +46,11 @@ const EnvSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().min(1, "TWILIO_ACCOUNT_SID is required"),
   TWILIO_AUTH_TOKEN: z.string().min(1, "TWILIO_AUTH_TOKEN is required"),
   TWILIO_PHONE_NUMBER: z.string().min(1, "TWILIO_PHONE_NUMBER is required"),
+  // Real phone calls (calls, story calls, alarms, meeting auto-calls). Off while on Twilio's free tier.
+  PHONE_CALLS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 
   // ─── Deepgram ─────────────────────────────────────
   DEEPGRAM_API_KEY: z.string().min(1, "DEEPGRAM_API_KEY is required"),
@@ -115,3 +120,7 @@ if (!parsed.success) {
 }
 
 export const config: Env = parsed.data;
+
+/** Shown to users (and spoken by the assistant) while PHONE_CALLS_ENABLED is off. */
+export const PHONE_CALLS_PAUSED_MESSAGE =
+  "Phone calls are paused for now. xTanBot is running on a free calling plan, so placing real calls, story calls and wake-up alarm calls is turned off for the moment. Everything else (voice chat, web search, contacts and meetings) works as usual.";

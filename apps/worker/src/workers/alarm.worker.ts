@@ -155,6 +155,12 @@ async function fireAlarm(alarm: AlarmWithUser): Promise<void> {
     return;
   }
 
+  if (!config.PHONE_CALLS_ENABLED) {
+    logger.info({ alarmId: alarm.id }, "Phone calls paused (PHONE_CALLS_ENABLED=false) — not ringing alarm");
+    await prisma.alarm.update({ where: { id: alarm.id }, data: { status: "failed" } });
+    return;
+  }
+
   try {
     // Atomic status transition: only one worker instance fires each alarm.
     const updated = await prisma.alarm.updateMany({

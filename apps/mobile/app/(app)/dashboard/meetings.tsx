@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useMeetings, useUpcomingMeetings } from "../../../src/hooks/useMeetings";
 import MeetingCard from "../../../src/components/meetings/MeetingCard";
 import { isUpcoming } from "../../../src/utils/date.utils";
-import { Appear, EmptyState, IconButton, Screen, ScreenHeader, Skeleton } from "../../../src/components/ui";
+import { Appear, EmptyState, IconButton, PhoneCallsNotice, Screen, ScreenHeader, Skeleton } from "../../../src/components/ui";
 import { colors } from "../../../src/theme";
 
 export default function MeetingsScreen() {
@@ -31,6 +31,7 @@ export default function MeetingsScreen() {
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
+        ListHeaderComponent={<PhoneCallsNotice message="Your meetings are saved and you still get reminders, but xTanBot won't auto-call attendees for now while we're on a free calling plan." />}
         renderSectionHeader={({ section }) => <Text style={s.section}>{section.title}</Text>}
         renderItem={({ item, index }) => (
           <Appear index={index}>

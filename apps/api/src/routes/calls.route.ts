@@ -41,7 +41,7 @@ export async function callsRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(201).send(call);
     } catch (err) {
       logger.error({ err }, "Internal call initiation failed");
-      return reply.status(500).send({
+      return reply.status((err as { statusCode?: number }).statusCode ?? 500).send({
         error: "Failed to initiate call",
         message: err instanceof Error ? err.message : "Unknown error",
       });
@@ -157,7 +157,7 @@ export async function callsRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(201).send(call);
     } catch (err) {
       logger.error({ err }, "Story call initiation failed");
-      return reply.status(500).send({
+      return reply.status((err as { statusCode?: number }).statusCode ?? 500).send({
         error: "Failed to initiate story call",
         message: err instanceof Error ? err.message : "Unknown error",
       });

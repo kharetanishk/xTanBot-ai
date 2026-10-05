@@ -1,11 +1,15 @@
 import { ZodError } from "zod";
 import type OpenAI from "openai";
 import { createLogger } from "@xtanbot/logger";
+import { config, PHONE_CALLS_PAUSED_MESSAGE } from "@xtanbot/config";
 import { ToolError } from "./errors";
 import { allTools } from "./tools";
 import type { ToolDefinition, ConfirmationRequired } from "./types";
 
 const logger = createLogger("ToolRouter");
+
+/** Tools that place a real phone call — blocked while PHONE_CALLS_ENABLED is off. */
+const PHONE_CALL_TOOLS = new Set(["make_call", "story_call", "set_alarm"]);
 
 class ToolRouter {
   private readonly registry = new Map<string, ToolDefinition>();
@@ -21,6 +25,11 @@ class ToolRouter {
     const tool = this.registry.get(name);
     if (!tool) {
       throw new ToolError(`Unknown tool: ${name}`, name);
+    }
+
+    if (PHONE_CALL_TOOLS.has(name) && !config.PHONE_CALLS_ENABLED) {
+      logger.info({ toolName: name }, "Phone calls paused — tool blocked");
+      return { success: false, message: PHONE_CALLS_PAUSED_MESSAGE };
     }
 
     if (tool.requiresConfirmation && !confirmed) {

@@ -4,6 +4,7 @@ import { prisma } from "@xtanbot/db";
 import { redisConnection } from "@xtanbot/redis";
 import { requireAuth } from "../middleware/auth.middleware";
 import { createLogger } from "@xtanbot/logger";
+import { config, PHONE_CALLS_PAUSED_MESSAGE } from "@xtanbot/config";
 
 const ALARM_CREATED_CHANNEL = "alarm:created";
 
@@ -35,6 +36,9 @@ export async function alarmsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/alarms", { preHandler: requireAuth }, async (request, reply) => {
+    if (!config.PHONE_CALLS_ENABLED) {
+      return reply.status(503).send({ statusCode: 503, error: "Unavailable", message: PHONE_CALLS_PAUSED_MESSAGE });
+    }
     const { userId } = request.user;
     const parsed = CreateAlarmSchema.safeParse(request.body);
     if (!parsed.success) {

@@ -2,7 +2,7 @@ import { FlatList, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useCalls } from "../../../src/hooks/useCalls";
 import CallCard from "../../../src/components/calls/CallCard";
-import { Appear, EmptyState, IconButton, Screen, ScreenHeader, Skeleton } from "../../../src/components/ui";
+import { Appear, EmptyState, IconButton, PhoneCallsNotice, Screen, ScreenHeader, Skeleton } from "../../../src/components/ui";
 import { colors } from "../../../src/theme";
 
 export default function CallsScreen() {
@@ -25,6 +25,7 @@ export default function CallsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={<PhoneCallsNotice />}
         renderItem={({ item, index }) => (
           <Appear index={index}>
             <CallCard call={item} onPress={() => router.push(`/(app)/call/${item.id}`)} />

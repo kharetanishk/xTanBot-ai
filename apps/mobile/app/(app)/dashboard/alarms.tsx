@@ -27,12 +27,14 @@ import {
   Badge,
   EmptyState,
   IconButton,
+  PhoneCallsNotice,
   PrimaryButton,
   Screen,
   ScreenHeader,
   Skeleton,
 } from "../../../src/components/ui";
 import { colors, radius, type Tone } from "../../../src/theme";
+import { PHONE_CALLS_ENABLED } from "../../../src/constants/config";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -203,6 +205,7 @@ export default function AlarmsScreen() {
               subtitle={upcoming.length ? `${upcoming.length} active` : "xTanBot calls you to wake you up"}
               right={<IconButton icon="add" onPress={openSheet} accessibilityLabel="New alarm" />}
             />
+            <PhoneCallsNotice message="Alarms work by calling your phone, and we're on a free calling plan right now, so new wake-up calls are switched off for the moment. Voice chat, web search, contacts and meetings all still work." />
 
             {/* Live clock */}
             <Appear index={1} style={s.clockCard}>
@@ -403,7 +406,7 @@ export default function AlarmsScreen() {
 
             <View style={s.sheetActions}>
               <PrimaryButton label="Cancel" tone="neutral" onPress={() => setSheetOpen(false)} style={{ flex: 1 }} />
-              <PrimaryButton label="Set alarm" icon="alarm" onPress={submit} loading={createAlarm.isPending} style={{ flex: 1.4 }} />
+              <PrimaryButton label="Set alarm" icon="alarm" onPress={submit} loading={createAlarm.isPending} disabled={!PHONE_CALLS_ENABLED} style={{ flex: 1.4 }} />
             </View>
           </ScrollView>
         </Animated.View>
