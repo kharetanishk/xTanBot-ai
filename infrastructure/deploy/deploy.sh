@@ -13,6 +13,7 @@ pnpm install --frozen-lockfile
 # Postgres + Redis (localhost only)
 docker compose -f infrastructure/docker/docker-compose.yml up -d --wait
 
+pnpm db:generate
 pnpm build
 set -a; . ./.env; set +a
 pnpm --filter @xtanbot/db exec prisma migrate deploy
