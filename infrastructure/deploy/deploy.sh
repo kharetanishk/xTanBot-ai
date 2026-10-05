@@ -15,8 +15,8 @@ docker compose -f infrastructure/docker/docker-compose.yml up -d --wait
 
 pnpm --filter @xtanbot/db exec prisma generate
 pnpm build
-set -a; . ./.env; set +a
-pnpm --filter @xtanbot/db exec prisma migrate deploy
+# .env only for prisma; apps load it themselves (exporting it here would pin stale values in pm2)
+(set -a; . ./.env; set +a; pnpm --filter @xtanbot/db exec prisma migrate deploy)
 
 # Web frontend -> static files served by nginx
 (cd apps/mobile && EXPO_PUBLIC_API_URL=$API_PUBLIC_URL npx expo export --platform web)
@@ -29,4 +29,5 @@ pm2 restart xtanbot-worker 2>/dev/null || pm2 start apps/worker/dist/index.js   
 pm2 restart xtanbot-voice  2>/dev/null || pm2 start apps/voice-agent/dist/index.js --name xtanbot-voice -- start
 pm2 save
 
-curl -fsS "http://127.0.0.1:${API_PORT:-3000}/health" && echo " ✓ deployed"
+sleep 5
+curl -fsS "http://127.0.0.1:$(grep -oP '^API_PORT=\K.*' .env)/health" && echo " ✓ deployed"
