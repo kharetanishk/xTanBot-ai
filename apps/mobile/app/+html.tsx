@@ -18,7 +18,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         */}
         <ScrollViewStyleReset />
 
-        {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
+        {/* Raw CSS so the page background matches the dark app and never flashes white. */}
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
         <title>xTanBot — your AI assistant who picks up the phone</title>
         {/* xTan's face on an amber disc (assets/images → public/) */}
@@ -33,12 +33,10 @@ export default function Root({ children }: { children: React.ReactNode }) {
   );
 }
 
+// App is dark-only: paint the page behind it the same color so overscroll/bounce
+// and the mobile toolbar resize never reveal a white strip.
 const responsiveBackground = `
-body {
-  background-color: #fff;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #000;
-  }
+html, body {
+  background-color: #09090b;
+  overscroll-behavior: none;
 }`;
