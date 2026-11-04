@@ -26,8 +26,13 @@ const EnvSchema = z.object({
     .url("API_URL must be a valid URL")
     .default("http://localhost:3000"),
 
-  // ─── LLM (OpenRouter — any model: anthropic/*, openai/*, google/* …) ───
-  OPENROUTER_API_KEY: z.string().min(1, "OPENROUTER_API_KEY is required"),
+  // ─── LLM: Gemini on Vertex AI when VERTEX_PROJECT is set, otherwise OpenRouter ───
+  // Both speak the OpenAI chat-completions API, so the model names below work for either
+  // (Vertex: google/gemini-*; OpenRouter: anthropic/*, openai/*, google/* …).
+  VERTEX_PROJECT: z.string().default(""),
+  /** Path to the service account key file Vertex AI signs in with. */
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().default(""),
+  OPENROUTER_API_KEY: z.string().default(""),
   /** Text chat (complex turns). */
   OPENROUTER_MODEL: z.string().default("anthropic/claude-sonnet-5.5"),
   /** Simple chat turns, phone calls, in-app voice, post-call analysis — latency matters. */
@@ -54,6 +59,8 @@ const EnvSchema = z.object({
 
   // ─── Deepgram ─────────────────────────────────────
   DEEPGRAM_API_KEY: z.string().min(1, "DEEPGRAM_API_KEY is required"),
+  /** In-app voice. Any Deepgram Aura-2 voice: https://developers.deepgram.com/docs/tts-models */
+  DEEPGRAM_TTS_MODEL: z.string().default("aura-2-thalia-en"),
 
   // ─── Auth ─────────────────────────────────────────
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),

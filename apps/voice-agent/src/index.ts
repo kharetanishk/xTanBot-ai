@@ -3,6 +3,7 @@ import {
   allTools,
   buildSystemPrompt,
   enrichToolInput,
+  llmClientOptions,
   toolRouter,
   type AgentContext,
 } from "@xtanbot/ai-core";
@@ -20,7 +21,6 @@ import {
   type JobContext,
 } from "@livekit/agents";
 import * as deepgram from "@livekit/agents-plugin-deepgram";
-import * as elevenlabs from "@livekit/agents-plugin-elevenlabs";
 import * as openai from "@livekit/agents-plugin-openai";
 import * as silero from "@livekit/agents-plugin-silero";
 import OpenAI from "openai";
@@ -30,23 +30,6 @@ const logger = createLogger("VoiceAgent");
 // LiveKit Cloud runs the semantic turn detector + adaptive (ML) interruption on its inference
 // gateway. A self-hosted livekit-server has neither, so fall back to Silero-VAD-driven turns.
 const isLiveKitCloud = config.LIVEKIT_URL.includes("livekit.cloud");
-
-/**
- * OpenRouter client that asks for the lowest-latency provider of the chosen model.
- * (The LiveKit OpenAI plugin can't pass OpenRouter's `provider` field, so we add it here.)
- */
-const openRouter = new OpenAI({
-  apiKey: config.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-  fetch: (url, init) => {
-    if (typeof init?.body === "string") {
-      const body = JSON.parse(init.body) as Record<string, unknown>;
-      body.provider = { sort: "latency" };
-      init = { ...init, body: JSON.stringify(body) };
-    }
-    return fetch(url, init);
-  },
-});
 
 /** Tools that take a beat — she acknowledges instantly instead of leaving dead air. */
 const SLOW_TOOLS = new Set([
@@ -170,19 +153,14 @@ export default defineAgent({
         smartFormat: false, // number/date reformatting delays every final transcript
       }),
       llm: new openai.LLM({
-        client: openRouter,
+        // Same options as text chat. The cast only bridges ai-core's CommonJS types to this ESM app.
+        client: new OpenAI(llmClientOptions as ConstructorParameters<typeof OpenAI>[0]),
         model: config.OPENROUTER_VOICE_MODEL,
       }),
-      tts: new elevenlabs.TTS({
-        apiKey: config.ELEVENLABS_API_KEY,
-        voiceId: config.ELEVENLABS_VOICE_ID,
-        // Turbo (not Flash): ~100ms slower to first audio but far more consistent timbre
-        // sentence-to-sentence — Flash audibly drifted between "different voices".
-        model: "eleven_turbo_v2_5",
-        // Lock the language: per-chunk auto-detection changed her accent on short phrases.
-        language: "en",
-        voiceSettings: { stability: 0.6, similarity_boost: 0.85, style: 0, use_speaker_boost: true, speed: 1 },
-        autoMode: true,
+      // Deepgram Aura-2 over a streaming socket: sentence-by-sentence audio, first sound in ~200ms.
+      tts: new deepgram.TTS({
+        apiKey: config.DEEPGRAM_API_KEY,
+        model: config.DEEPGRAM_TTS_MODEL,
       }),
       // Barge-in (gideon-style): plain VAD interruption that needs 2 transcribed words, so
       // coughs / "mm-hmm" / speaker echo don't cut her off (or pause+resume her audio),
