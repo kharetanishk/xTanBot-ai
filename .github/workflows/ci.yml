@@ -16,6 +16,7 @@ jobs:
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-only-secret-ci-only-secret-ci-only
       DEEPGRAM_API_KEY: ci
+      OPENROUTER_API_KEY: ci
       ELEVENLABS_API_KEY: ci
       ELEVENLABS_VOICE_ID: ci
       TWILIO_ACCOUNT_SID: ci

@@ -109,7 +109,16 @@ const EnvSchema = z.object({
   USER_DEFAULT_PINCODE: z.string().default("491001"),
   USER_DEFAULT_LAT: z.string().default("21.1904"),
   USER_DEFAULT_LNG: z.string().default("81.2849"),
-});
+})
+  // The LLM needs one provider. Checked here so a missing credential fails at startup with a clear message.
+  .refine((env) => env.VERTEX_PROJECT || env.OPENROUTER_API_KEY, {
+    path: ["VERTEX_PROJECT"],
+    message: "Set VERTEX_PROJECT (Gemini on Vertex AI) or OPENROUTER_API_KEY",
+  })
+  .refine((env) => !env.VERTEX_PROJECT || env.GOOGLE_APPLICATION_CREDENTIALS, {
+    path: ["GOOGLE_APPLICATION_CREDENTIALS"],
+    message: "VERTEX_PROJECT needs GOOGLE_APPLICATION_CREDENTIALS, the path to a service account key",
+  });
 
 export type Env = z.infer<typeof EnvSchema>;
 
