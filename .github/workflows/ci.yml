@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # packages/config validates the environment at import time. Tests fake every service,
+    # so placeholders are enough.
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-only-secret-ci-only-secret-ci-only
+      DEEPGRAM_API_KEY: ci
+      ELEVENLABS_API_KEY: ci
+      ELEVENLABS_VOICE_ID: ci
+      TWILIO_ACCOUNT_SID: ci
+      TWILIO_AUTH_TOKEN: ci
+      TWILIO_PHONE_NUMBER: "+10000000000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @xtanbot/db exec prisma generate
+      - run: pnpm build
+      # Called directly rather than through turbo, which drops environment variables it doesn't know about.
+      - run: pnpm --filter @xtanbot/ai-core test
