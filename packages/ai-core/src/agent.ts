@@ -361,23 +361,34 @@ function parseToolArgs(raw: string): unknown {
   }
 }
 
-/** Confirmation intent patterns (covers English and common Hindi shorthand). */
-const CONFIRM_PATTERNS = [
-  /\byes\b/i,
-  /\bgo\s+ahead\b/i,
-  /\bconfirm(ed)?\b/i,
-  /\bdo\s+it\b/i,
-  /\bproceed\b/i,
-  /\bcall\s+them\b/i,
-  /\byes,?\s*call\b/i,
-  /\bplace\s+the\s+call\b/i,
-  /\byes,?\s*place\b/i,
-  /\bbook\s+it\b/i,
-  /\bhaan\b/i,
-  /\bkar\s+do\b/i,
-  /\bsure\b/i,
-  /\bsounds?\s+good\b/i,
-];
+/** Tools that act on the user's behalf and must never run without an explicit yes. */
+const GATED_TOOLS = new Set(["make_call", "send_whatsapp"]);
+
+/** Words a whole-message confirmation may contain ("yes", "yeah go ahead", "haan kar do"). */
+const YES_WORDS = new Set([
+  "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "haan", "ha", "ji",
+  "go", "ahead", "do", "it", "proceed", "confirm", "confirmed", "please",
+  "call", "them", "place", "the", "send", "book", "kar", "sounds", "good",
+  "correct", "right",
+]);
+const AFFIRMATIVE = /\b(yes|yeah|yep|yup|sure|ok|okay|haan|ha|go|proceed|confirm(ed)?|do|call|send|book|kar|sounds|correct|right)\b/;
+
+/** Exact texts sent by the confirmation card buttons (see structuredPayload below). */
+const CONFIRM_BUTTON_PREFIX: Record<string, string> = {
+  make_call: "yes, go ahead and call ",
+  send_whatsapp: "yes, send the whatsapp to ",
+};
+
+const PENDING_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Gated tool calls that were held for confirmation, keyed by user+session+tool.
+ * `turn` identifies the user message that was current when the card was shown,
+ * so a yes only counts if it arrives in a later turn.
+ * ponytail: in-process map; with several API replicas a yes landing on another
+ * replica just shows the card again (fails closed). Move to Redis if that bites.
+ */
+const pendingConfirmations = new Map<string, { turn: string; at: number }>();
 
 function lastUserText(ctx: AgentContext): string {
   const lastUser = [...ctx.messages].reverse().find((m) => m.role === "user");
@@ -385,9 +396,48 @@ function lastUserText(ctx: AgentContext): string {
   return lastUser.content.toLowerCase();
 }
 
-function userConfirmed(ctx: AgentContext): boolean {
-  const text = lastUserText(ctx);
-  return CONFIRM_PATTERNS.some((p) => p.test(text));
+function turnId(ctx: AgentContext): string {
+  return `${ctx.messages.length}:${lastUserText(ctx)}`;
+}
+
+/** A short whole-message yes, or the exact confirm-button text for this tool. */
+export function isExplicitYes(toolName: string, rawText: string): boolean {
+  const text = rawText.trim().toLowerCase();
+  const prefix = CONFIRM_BUTTON_PREFIX[toolName];
+  if (prefix && text.startsWith(prefix)) {
+    return toolName !== "send_whatsapp" || text.endsWith(" confirmed");
+  }
+  const words = text.replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  return (
+    words.length > 0 &&
+    words.length <= 6 &&
+    words.every((w) => YES_WORDS.has(w)) &&
+    AFFIRMATIVE.test(words.join(" "))
+  );
+}
+
+/**
+ * True only when this tool was held for confirmation in an earlier turn of the
+ * same session and the user's latest message is an explicit yes. Otherwise it
+ * records a pending confirmation so the next turn's yes can count.
+ */
+function consumeConfirmation(ctx: AgentContext, toolName: string): boolean {
+  const key = `${ctx.userId}:${ctx.sessionId}:${toolName}`;
+  const now = Date.now();
+  const turn = turnId(ctx);
+  const pending = pendingConfirmations.get(key);
+  const live = pending && now - pending.at < PENDING_TTL_MS;
+
+  if (live && pending.turn !== turn && isExplicitYes(toolName, lastUserText(ctx))) {
+    pendingConfirmations.delete(key);
+    return true;
+  }
+  for (const [k, v] of pendingConfirmations) {
+    if (now - v.at >= PENDING_TTL_MS) pendingConfirmations.delete(k);
+  }
+  // Same-turn retries keep the same turn id, so they can never confirm themselves.
+  pendingConfirmations.set(key, { turn, at: now });
+  return false;
 }
 
 /** Merge authenticated context into tool args so the model never has to guess userId. */
@@ -418,18 +468,11 @@ export function enrichToolInput(
       enriched.timezone = tz;
     }
   }
-  // Inject confirmed=true for any tool that requiresConfirmation when the user has
-  // already agreed in natural language.
-  if (toolName === "send_whatsapp") {
-    const text = lastUserText(ctx);
-    if (/yes,?\s*send\s+the\s+whatsapp/i.test(text) && /confirmed/i.test(text)) {
-      enriched.confirmed = true;
-    } else if (userConfirmed(ctx)) {
-      enriched.confirmed = true;
-    }
-  }
-  if (toolName === "make_call" && userConfirmed(ctx)) {
-    enriched.confirmed = true;
+  // Never trust a model-supplied `confirmed`: set it only from a real user yes
+  // to a confirmation card shown in an earlier turn.
+  if (GATED_TOOLS.has(toolName)) {
+    delete enriched.confirmed;
+    if (consumeConfirmation(ctx, toolName)) enriched.confirmed = true;
   }
   return enriched;
 }
